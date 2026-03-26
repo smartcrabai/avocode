@@ -22,7 +22,10 @@ targets = [
 ]
 
 [dependencies]
-tokio = { version = "1.50.0", features = ["rt", "macros"] }
+crossterm = "0.28"
+ratatui = "0.29"
+thiserror = "2"
+tokio = { version = "1.50.0", features = ["full"] }
 
 [profile.release]
 codegen-units = 1
