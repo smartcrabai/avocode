@@ -1,4 +1,9 @@
-#[tokio::main(flavor = "current_thread")]
+pub mod cli;
+
+#[tokio::main]
 async fn main() {
-    todo!();
+    if let Err(e) = cli::run().await {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 }

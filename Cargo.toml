@@ -22,7 +22,9 @@ targets = [
 ]
 
 [dependencies]
-tokio = { version = "1.50.0", features = ["rt", "macros"] }
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1.50.0", features = ["full"] }
 
 [profile.release]
 codegen-units = 1
