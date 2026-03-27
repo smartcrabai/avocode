@@ -4,7 +4,7 @@ edition = "2024"
 license = "MIT"
 name = "avocode"
 repository = "https://github.com/smartcrabai/avocode"
-version = "0.1.0"
+version = "0.1.1"
 
 [workspace.metadata.dist]
 cargo-dist-version = "0.31.0"
