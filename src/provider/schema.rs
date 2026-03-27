@@ -57,7 +57,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_model_info_serialization_roundtrip() {
+    fn test_model_info_serialization_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let model = ModelInfo {
             id: "claude-sonnet-4-5".to_string(),
             name: "Claude Sonnet 4.5".to_string(),
@@ -83,8 +83,8 @@ mod tests {
             status: ModelStatus::Active,
         };
 
-        let json = serde_json::to_string(&model).expect("serialization failed");
-        let deserialized: ModelInfo = serde_json::from_str(&json).expect("deserialization failed");
+        let json = serde_json::to_string(&model)?;
+        let deserialized: ModelInfo = serde_json::from_str(&json)?;
 
         assert_eq!(model.id, deserialized.id);
         assert_eq!(model.name, deserialized.name);
@@ -92,11 +92,12 @@ mod tests {
         assert_eq!(model.family, deserialized.family);
         assert_eq!(model.capabilities.tools, deserialized.capabilities.tools);
         assert_eq!(model.capabilities.vision, deserialized.capabilities.vision);
-        assert_eq!(model.cost.input, deserialized.cost.input);
-        assert_eq!(model.cost.output, deserialized.cost.output);
+        assert!((model.cost.input - deserialized.cost.input).abs() < f64::EPSILON);
+        assert!((model.cost.output - deserialized.cost.output).abs() < f64::EPSILON);
         assert_eq!(model.cost.cache_read, deserialized.cost.cache_read);
         assert_eq!(model.context_length, deserialized.context_length);
         assert_eq!(model.status, deserialized.status);
+        Ok(())
     }
 
     #[test]

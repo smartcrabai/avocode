@@ -77,74 +77,80 @@ mod tests {
 
     /// Opening an in-memory database and running migrations must not fail.
     #[test]
-    fn test_open_in_memory_runs_migrations() {
-        Database::open_in_memory().unwrap();
+    fn test_open_in_memory_runs_migrations() -> Result<(), Box<dyn std::error::Error>> {
+        Database::open_in_memory()?;
+        Ok(())
     }
 
     /// Insert a session and retrieve it by ID.
     #[test]
-    fn test_session_insert_and_get() {
-        let db = Database::open_in_memory().unwrap();
-        db.project_insert(&make_project()).unwrap();
+    fn test_session_insert_and_get() -> Result<(), Box<dyn std::error::Error>> {
+        let db = Database::open_in_memory()?;
+        db.project_insert(&make_project())?;
         let session = make_session("proj-1");
-        db.session_insert(&session).unwrap();
+        db.session_insert(&session)?;
 
-        let got = db.session_get("sess-1").unwrap();
+        let got = db.session_get("sess-1")?;
         assert!(got.is_some());
-        let got = got.unwrap();
+        let got = got.ok_or("session not found")?;
         assert_eq!(got.id, "sess-1");
         assert_eq!(got.title, Some("My Session".to_string()));
         assert_eq!(got.project_id, "proj-1");
+        Ok(())
     }
 
     /// Insert messages and list them for the session.
     #[test]
-    fn test_message_insert_and_list() {
-        let db = Database::open_in_memory().unwrap();
-        db.project_insert(&make_project()).unwrap();
-        db.session_insert(&make_session("proj-1")).unwrap();
-        db.message_insert(&make_message("sess-1")).unwrap();
+    fn test_message_insert_and_list() -> Result<(), Box<dyn std::error::Error>> {
+        let db = Database::open_in_memory()?;
+        db.project_insert(&make_project())?;
+        db.session_insert(&make_session("proj-1"))?;
+        db.message_insert(&make_message("sess-1"))?;
 
-        let msgs = db.message_list("sess-1").unwrap();
+        let msgs = db.message_list("sess-1")?;
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].id, "msg-1");
         assert_eq!(msgs[0].role, "user");
         // metadata round-trips correctly
-        let meta = msgs[0].metadata.as_ref().unwrap();
+        let meta = msgs[0].metadata.as_ref().ok_or("metadata missing")?;
         assert_eq!(meta["tokens"], serde_json::json!(42));
+        Ok(())
     }
 
     /// Insert parts and list them for the session.
     #[test]
-    fn test_part_insert_and_list() {
-        let db = Database::open_in_memory().unwrap();
-        db.project_insert(&make_project()).unwrap();
-        db.session_insert(&make_session("proj-1")).unwrap();
-        db.message_insert(&make_message("sess-1")).unwrap();
-        db.part_insert(&make_part("msg-1", "sess-1")).unwrap();
+    fn test_part_insert_and_list() -> Result<(), Box<dyn std::error::Error>> {
+        let db = Database::open_in_memory()?;
+        db.project_insert(&make_project())?;
+        db.session_insert(&make_session("proj-1"))?;
+        db.message_insert(&make_message("sess-1"))?;
+        db.part_insert(&make_part("msg-1", "sess-1"))?;
 
-        let parts = db.part_list("sess-1").unwrap();
+        let parts = db.part_list("sess-1")?;
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0].id, "part-1");
         assert_eq!(parts[0].r#type, "text");
-        let data = parts[0].data.as_ref().unwrap();
+        let data = parts[0].data.as_ref().ok_or("part data missing")?;
         assert_eq!(data["content"], serde_json::json!("Hello, world!"));
+        Ok(())
     }
 
     /// Listing parts for a session that has no parts returns an empty vec.
     #[test]
-    fn test_part_list_nonexistent_session_returns_empty() {
-        let db = Database::open_in_memory().unwrap();
-        let parts = db.part_list("does-not-exist").unwrap();
+    fn test_part_list_nonexistent_session_returns_empty() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let db = Database::open_in_memory()?;
+        let parts = db.part_list("does-not-exist")?;
         assert!(parts.is_empty());
+        Ok(())
     }
 
     /// Todo upsert inserts on first call and updates on second call for same position.
     #[test]
-    fn test_todo_upsert() {
-        let db = Database::open_in_memory().unwrap();
-        db.project_insert(&make_project()).unwrap();
-        db.session_insert(&make_session("proj-1")).unwrap();
+    fn test_todo_upsert() -> Result<(), Box<dyn std::error::Error>> {
+        let db = Database::open_in_memory()?;
+        db.project_insert(&make_project())?;
+        db.session_insert(&make_session("proj-1"))?;
 
         let todo = TodoRow {
             session_id: "sess-1".to_string(),
@@ -155,7 +161,7 @@ mod tests {
             time_created: 5_000_000,
             time_updated: 5_000_000,
         };
-        db.todo_upsert(&todo).unwrap();
+        db.todo_upsert(&todo)?;
 
         // Upsert again with a different status at the same position.
         let updated = TodoRow {
@@ -163,38 +169,38 @@ mod tests {
             time_updated: 6_000_000,
             ..todo
         };
-        db.todo_upsert(&updated).unwrap();
+        db.todo_upsert(&updated)?;
 
-        let todos = db.todo_list("sess-1").unwrap();
+        let todos = db.todo_list("sess-1")?;
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].status, "done");
+        Ok(())
     }
 
     /// Session list returns only sessions for the given project.
     #[test]
-    fn test_session_list_by_project() {
-        let db = Database::open_in_memory().unwrap();
-        db.project_insert(&make_project()).unwrap();
+    fn test_session_list_by_project() -> Result<(), Box<dyn std::error::Error>> {
+        let db = Database::open_in_memory()?;
+        db.project_insert(&make_project())?;
         db.project_insert(&ProjectRow {
             id: "proj-2".to_string(),
             name: "Other".to_string(),
             worktree: vec![],
             time_created: 1_000_000,
             time_updated: 1_000_000,
-        })
-        .unwrap();
+        })?;
 
-        db.session_insert(&make_session("proj-1")).unwrap();
+        db.session_insert(&make_session("proj-1"))?;
         db.session_insert(&SessionRow {
             id: "sess-2".to_string(),
             project_id: "proj-2".to_string(),
             slug: "other-session".to_string(),
             ..make_session("proj-2")
-        })
-        .unwrap();
+        })?;
 
-        let list = db.session_list("proj-1").unwrap();
+        let list = db.session_list("proj-1")?;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "sess-1");
+        Ok(())
     }
 }

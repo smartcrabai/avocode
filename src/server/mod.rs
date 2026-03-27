@@ -38,17 +38,17 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Start the HTTP server on the given port.
+/// Start the HTTP server on the given host and port.
 ///
 /// # Errors
 ///
 /// Returns a [`ServerError::Internal`] if binding or serving fails.
-pub async fn serve(port: u16) -> Result<(), ServerError> {
-    use std::net::SocketAddr;
-
+pub async fn serve(host: &str, port: u16) -> Result<(), ServerError> {
     let state = AppState::new();
     let app = create_router(state);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr: std::net::SocketAddr = format!("{host}:{port}")
+        .parse()
+        .map_err(|e: std::net::AddrParseError| ServerError::Internal(e.to_string()))?;
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await

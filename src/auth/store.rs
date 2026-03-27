@@ -126,20 +126,21 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_info_api_roundtrip() {
+    fn test_auth_info_api_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let info = AuthInfo::Api {
             key: "sk-test".to_string(),
         };
-        let json = serde_json::to_string(&info).unwrap();
-        let decoded: AuthInfo = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&info)?;
+        let decoded: AuthInfo = serde_json::from_str(&json)?;
         match decoded {
             AuthInfo::Api { key } => assert_eq!(key, "sk-test"),
             _ => panic!("wrong variant"),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_auth_info_oauth_roundtrip() {
+    fn test_auth_info_oauth_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let info = AuthInfo::Oauth {
             refresh: Some("refresh_tok".to_string()),
             access: "access_tok".to_string(),
@@ -147,8 +148,8 @@ mod tests {
             account_id: Some("acct_1".to_string()),
             enterprise_url: None,
         };
-        let json = serde_json::to_string(&info).unwrap();
-        let decoded: AuthInfo = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&info)?;
+        let decoded: AuthInfo = serde_json::from_str(&json)?;
         match decoded {
             AuthInfo::Oauth {
                 access,
@@ -162,16 +163,17 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_auth_info_wellknown_roundtrip() {
+    fn test_auth_info_wellknown_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let info = AuthInfo::WellKnown {
             key: "wk-key".to_string(),
             token: "wk-token".to_string(),
         };
-        let json = serde_json::to_string(&info).unwrap();
-        let decoded: AuthInfo = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&info)?;
+        let decoded: AuthInfo = serde_json::from_str(&json)?;
         match decoded {
             AuthInfo::WellKnown { key, token } => {
                 assert_eq!(key, "wk-key");
@@ -179,69 +181,65 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_store_read_write_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
+    fn test_store_read_write_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let store = temp_store(dir.path());
 
-        store
-            .set(
-                "test-provider",
-                AuthInfo::Api {
-                    key: "hello".to_string(),
-                },
-            )
-            .unwrap();
+        store.set(
+            "test-provider",
+            AuthInfo::Api {
+                key: "hello".to_string(),
+            },
+        )?;
 
-        let got = store.get("test-provider").unwrap();
+        let got = store.get("test-provider")?;
         match got {
             Some(AuthInfo::Api { key }) => assert_eq!(key, "hello"),
             _ => panic!("expected Api variant"),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_store_remove() {
-        let dir = tempfile::tempdir().unwrap();
+    fn test_store_remove() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let store = temp_store(dir.path());
 
-        store
-            .set(
-                "prov",
-                AuthInfo::Api {
-                    key: "x".to_string(),
-                },
-            )
-            .unwrap();
-        store.remove("prov").unwrap();
-        assert!(store.get("prov").unwrap().is_none());
+        store.set(
+            "prov",
+            AuthInfo::Api {
+                key: "x".to_string(),
+            },
+        )?;
+        store.remove("prov")?;
+        assert!(store.get("prov")?.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_store_list_multiple() {
-        let dir = tempfile::tempdir().unwrap();
+    fn test_store_list_multiple() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let store = temp_store(dir.path());
 
-        store
-            .set(
-                "a",
-                AuthInfo::Api {
-                    key: "1".to_string(),
-                },
-            )
-            .unwrap();
-        store
-            .set(
-                "b",
-                AuthInfo::Api {
-                    key: "2".to_string(),
-                },
-            )
-            .unwrap();
+        store.set(
+            "a",
+            AuthInfo::Api {
+                key: "1".to_string(),
+            },
+        )?;
+        store.set(
+            "b",
+            AuthInfo::Api {
+                key: "2".to_string(),
+            },
+        )?;
 
-        let list = store.list().unwrap();
+        let list = store.list()?;
         assert_eq!(list.len(), 2);
+        Ok(())
     }
 }

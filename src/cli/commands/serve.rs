@@ -9,14 +9,8 @@ pub struct ServeArgs {
 /// # Errors
 ///
 /// Returns `CliError` if the command fails.
-#[expect(
-    clippy::unused_async,
-    reason = "placeholder until async operations are integrated"
-)]
 pub async fn execute(args: ServeArgs) -> crate::cli::Result<()> {
-    println!(
-        "avocode serve: starting on {}:{} (not yet integrated)",
-        args.host, args.port
-    );
+    println!("avocode serve: starting on {}:{}", args.host, args.port);
+    crate::server::serve(&args.host, args.port).await?;
     Ok(())
 }

@@ -41,10 +41,10 @@ mod tests {
     use crate::session::store::SessionStore;
 
     #[tokio::test]
-    async fn process_emits_message_created_and_done() {
-        let store = SessionStore::open_in_memory().expect("store");
+    async fn process_emits_message_created_and_done() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
-        store.create_session(&session).expect("create session");
+        store.create_session(&session)?;
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(10);
         let options = ProcessOptions {
@@ -55,20 +55,22 @@ mod tests {
             max_turns: None,
         };
 
-        process(&store, options, tx).await.expect("process");
+        process(&store, options, tx).await?;
 
-        let event1 = rx.recv().await.expect("event1");
+        let event1 = rx.recv().await.ok_or("event1")?;
         assert!(matches!(event1, ProcessEvent::MessageCreated { .. }));
 
-        let event2 = rx.recv().await.expect("event2");
+        let event2 = rx.recv().await.ok_or("event2")?;
         assert!(matches!(event2, ProcessEvent::Done));
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn process_stores_user_message() {
-        let store = SessionStore::open_in_memory().expect("store");
+    async fn process_stores_user_message() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
-        store.create_session(&session).expect("create session");
+        store.create_session(&session)?;
 
         let (tx, _rx) = tokio::sync::mpsc::channel(10);
         let options = ProcessOptions {
@@ -79,9 +81,11 @@ mod tests {
             max_turns: Some(5),
         };
 
-        process(&store, options, tx).await.expect("process");
+        process(&store, options, tx).await?;
 
-        let messages = store.list_messages(&session.id).expect("list messages");
+        let messages = store.list_messages(&session.id)?;
         assert_eq!(messages.len(), 1);
+
+        Ok(())
     }
 }

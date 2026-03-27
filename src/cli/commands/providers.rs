@@ -1,35 +1,21 @@
 /// # Errors
 ///
 /// Returns `CliError` if the command fails.
-#[expect(
-    clippy::unused_async,
-    reason = "placeholder until async operations are integrated"
-)]
+#[expect(clippy::unused_async, reason = "async is part of the public CLI API")]
 pub async fn execute() -> crate::cli::Result<()> {
-    let providers = [
-        "anthropic",
-        "openai",
-        "google",
-        "github-copilot",
-        "openai-codex",
-        "xai",
-        "mistral",
-        "groq",
-        "azure",
-        "bedrock",
-        "vertex",
-        "openrouter",
-        "cohere",
-        "together",
-        "perplexity",
-        "deepinfra",
-        "cerebras",
-        "gitlab",
-        "vercel",
-    ];
-    println!("Available providers:");
+    let registry = crate::provider::ProviderRegistry::new(crate::provider::builtin_providers());
+    let providers = registry.list_providers();
+
+    println!("Available providers ({}):", providers.len());
     for p in &providers {
-        println!("  - {p}");
+        let key_status = if crate::provider::ProviderRegistry::has_api_key(p) {
+            "configured"
+        } else if p.env.is_empty() {
+            "oauth"
+        } else {
+            "not configured"
+        };
+        println!("  {} ({}) [{}]", p.name, p.id, key_status);
     }
     Ok(())
 }

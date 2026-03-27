@@ -14,6 +14,14 @@ pub enum CliError {
     CommandFailed(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Session(#[from] crate::session::SessionError),
+    #[error(transparent)]
+    Config(#[from] crate::config::ConfigError),
+    #[error(transparent)]
+    Server(#[from] crate::server::ServerError),
+    #[error(transparent)]
+    Tui(#[from] crate::tui::TuiError),
 }
 
 pub type Result<T> = std::result::Result<T, CliError>;

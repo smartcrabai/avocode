@@ -114,18 +114,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sse_url_derivation_from_base() {
-        let transport =
-            SseTransport::new("https://example.com/mcp", HashMap::new()).expect("construct");
+    fn test_sse_url_derivation_from_base() -> Result<(), Box<dyn std::error::Error>> {
+        let transport = SseTransport::new("https://example.com/mcp", HashMap::new())?;
         assert_eq!(transport.event_source_url, "https://example.com/mcp/sse");
         assert_eq!(transport.post_url, "https://example.com/mcp/message");
+        Ok(())
     }
 
     #[test]
-    fn test_sse_url_already_sse() {
-        let transport =
-            SseTransport::new("https://example.com/mcp/sse", HashMap::new()).expect("construct");
+    fn test_sse_url_already_sse() -> Result<(), Box<dyn std::error::Error>> {
+        let transport = SseTransport::new("https://example.com/mcp/sse", HashMap::new())?;
         assert_eq!(transport.event_source_url, "https://example.com/mcp/sse");
         assert_eq!(transport.post_url, "https://example.com/mcp/message");
+        Ok(())
     }
 }

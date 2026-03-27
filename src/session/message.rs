@@ -158,28 +158,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn part_text_serializes_and_deserializes() {
+    fn part_text_serializes_and_deserializes() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::text("hello world");
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::Text(ref p) if p.text == "hello world"));
+        Ok(())
     }
 
     #[test]
-    fn part_tool_pending_roundtrip() {
+    fn part_tool_pending_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::Tool(ToolPart {
             id: "p1".to_owned(),
             tool_id: "t1".to_owned(),
             tool_name: "bash".to_owned(),
             state: ToolPartState::Pending,
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::Tool(_)));
+        Ok(())
     }
 
     #[test]
-    fn part_tool_completed_roundtrip() {
+    fn part_tool_completed_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::Tool(ToolPart {
             id: "p2".to_owned(),
             tool_id: "t2".to_owned(),
@@ -193,35 +195,38 @@ mod tests {
                 time_end: 2000,
             },
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::Tool(_)));
+        Ok(())
     }
 
     #[test]
-    fn part_compaction_roundtrip() {
+    fn part_compaction_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::Compaction(CompactionPart {
             id: "c1".to_owned(),
             summary: "summary text".to_owned(),
             tokens_removed: 500,
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::Compaction(ref p) if p.tokens_removed == 500));
+        Ok(())
     }
 
     #[test]
-    fn part_step_start_roundtrip() {
+    fn part_step_start_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::StepStart(StepStartPart {
             id: "s1".to_owned(),
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::StepStart(_)));
+        Ok(())
     }
 
     #[test]
-    fn part_step_finish_roundtrip() {
+    fn part_step_finish_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::StepFinish(StepFinishPart {
             id: "sf1".to_owned(),
             finish_reason: "stop".to_owned(),
@@ -232,32 +237,35 @@ mod tests {
                 cache_write_tokens: 5,
             }),
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::StepFinish(_)));
+        Ok(())
     }
 
     #[test]
-    fn part_file_roundtrip() {
+    fn part_file_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::File(FilePart {
             id: "f1".to_owned(),
             path: "/some/file.txt".to_owned(),
             mime_type: Some("text/plain".to_owned()),
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::File(ref p) if p.path == "/some/file.txt"));
+        Ok(())
     }
 
     #[test]
-    fn part_reasoning_roundtrip() {
+    fn part_reasoning_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let part = Part::Reasoning(ReasoningPart {
             id: "r1".to_owned(),
             reasoning: "step by step".to_owned(),
         });
-        let json = serde_json::to_string(&part).expect("serialize");
-        let back: Part = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&part)?;
+        let back: Part = serde_json::from_str(&json)?;
         assert!(matches!(back, Part::Reasoning(_)));
+        Ok(())
     }
 
     #[test]

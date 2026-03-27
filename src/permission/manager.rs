@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ask_and_reply_once_returns_true() {
+    async fn ask_and_reply_once_returns_true() -> Result<(), Box<dyn std::error::Error>> {
         let manager = Arc::new(PermissionManager::new());
         let rules = vec![PermissionRule {
             permission: "bash".into(),
@@ -202,17 +202,17 @@ mod tests {
         tokio::spawn(async move {
             // Small yield to let the check() call register the pending entry
             tokio::task::yield_now().await;
-            manager_clone
-                .reply(&req_id, PermissionReply::Once)
-                .expect("reply failed");
+            manager_clone.reply(&req_id, PermissionReply::Once)?;
+            Ok::<(), PermissionError>(())
         });
 
         let result = manager.check(req, &rules, &[]).await;
         assert!(matches!(result, Ok(true)));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn ask_and_reply_deny_returns_false() {
+    async fn ask_and_reply_deny_returns_false() -> Result<(), Box<dyn std::error::Error>> {
         let manager = Arc::new(PermissionManager::new());
         let rules = vec![PermissionRule {
             permission: "bash".into(),
@@ -225,13 +225,13 @@ mod tests {
         let manager_clone = Arc::clone(&manager);
         tokio::spawn(async move {
             tokio::task::yield_now().await;
-            manager_clone
-                .reply(&req_id, PermissionReply::Deny)
-                .expect("reply failed");
+            manager_clone.reply(&req_id, PermissionReply::Deny)?;
+            Ok::<(), PermissionError>(())
         });
 
         let result = manager.check(req, &rules, &[]).await;
         assert!(matches!(result, Ok(false)));
+        Ok(())
     }
 
     #[tokio::test]
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ask_and_reply_always_adds_session_rule() {
+    async fn ask_and_reply_always_adds_session_rule() -> Result<(), Box<dyn std::error::Error>> {
         let manager = Arc::new(PermissionManager::new());
         let ask_rules = vec![PermissionRule {
             permission: "bash".into(),
@@ -255,9 +255,8 @@ mod tests {
         let manager_clone = Arc::clone(&manager);
         tokio::spawn(async move {
             tokio::task::yield_now().await;
-            manager_clone
-                .reply(&req_id, PermissionReply::Always)
-                .expect("reply failed");
+            manager_clone.reply(&req_id, PermissionReply::Always)?;
+            Ok::<(), PermissionError>(())
         });
 
         let result = manager.check(req, &ask_rules, &[]).await;
@@ -267,6 +266,7 @@ mod tests {
         let req2 = make_request("bash", "some-script");
         let result2 = manager.check(req2, &ask_rules, &[]).await;
         assert!(matches!(result2, Ok(true)));
+        Ok(())
     }
 
     #[tokio::test]

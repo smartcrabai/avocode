@@ -223,46 +223,51 @@ mod tests {
     use crate::config::schema::{McpConfig, PermissionAction, PermissionRule};
 
     #[test]
-    fn strip_line_comment() {
+    fn strip_line_comment() -> Result<(), Box<dyn std::error::Error>> {
         let input = "{ \"key\": \"value\" // this is a comment\n}";
         let result = strip_jsonc_comments(input);
-        let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        let parsed: serde_json::Value = serde_json::from_str(&result)?;
         assert_eq!(parsed["key"], "value");
+        Ok(())
     }
 
     #[test]
-    fn strip_block_comment() {
+    fn strip_block_comment() -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"{ /* block comment */ "key": "value" }"#;
         let result = strip_jsonc_comments(input);
-        let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        let parsed: serde_json::Value = serde_json::from_str(&result)?;
         assert_eq!(parsed["key"], "value");
+        Ok(())
     }
 
     #[test]
-    fn strip_preserves_comment_syntax_in_strings() {
+    fn strip_preserves_comment_syntax_in_strings() -> Result<(), Box<dyn std::error::Error>> {
         // Slashes inside a string value must not be stripped.
         let input = r#"{ "url": "https://example.com" }"#;
         let result = strip_jsonc_comments(input);
-        let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        let parsed: serde_json::Value = serde_json::from_str(&result)?;
         assert_eq!(parsed["url"], "https://example.com");
+        Ok(())
     }
 
     #[test]
-    fn strip_multiline_block_comment() {
+    fn strip_multiline_block_comment() -> Result<(), Box<dyn std::error::Error>> {
         let input = "{ /* line1\nline2 */ \"key\": 42 }";
         let result = strip_jsonc_comments(input);
-        let parsed: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        let parsed: serde_json::Value = serde_json::from_str(&result)?;
         assert_eq!(parsed["key"], 42);
+        Ok(())
     }
 
     #[test]
-    fn parse_jsonc_parses_valid_jsonc() {
+    fn parse_jsonc_parses_valid_jsonc() -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"{
             // model selection
             "model": "gpt-4o" /* default model */
         }"#;
-        let cfg: Config = parse_jsonc(input).expect("should parse");
+        let cfg: Config = parse_jsonc(input)?;
         assert_eq!(cfg.model.as_deref(), Some("gpt-4o"));
+        Ok(())
     }
 
     #[test]
@@ -369,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_config_roundtrip() {
+    fn mcp_config_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"{
             "mcp": {
                 "my-server": {
@@ -380,39 +385,43 @@ mod tests {
                 }
             }
         }"#;
-        let cfg: Config = parse_jsonc(input).expect("should parse");
-        let server = cfg.mcp.get("my-server").expect("server present");
+        let cfg: Config = parse_jsonc(input)?;
+        let server = cfg.mcp.get("my-server").ok_or("server not present")?;
         match server {
             McpConfig::Stdio { command, .. } => assert_eq!(command, "npx"),
             McpConfig::Sse { .. } => panic!("expected Stdio variant"),
         }
+        Ok(())
     }
 
     #[test]
-    fn permission_action_roundtrip() {
+    fn permission_action_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let rule = PermissionRule {
             permission: "write".to_string(),
             pattern: "**/*.rs".to_string(),
             action: PermissionAction::Allow,
         };
-        let json = serde_json::to_string(&rule).expect("serialise");
-        let back: PermissionRule = serde_json::from_str(&json).expect("deserialise");
+        let json = serde_json::to_string(&rule)?;
+        let back: PermissionRule = serde_json::from_str(&json)?;
         assert!(matches!(back.action, PermissionAction::Allow));
+        Ok(())
     }
 
     #[test]
-    fn model_override_disabled_default_false() {
+    fn model_override_disabled_default_false() -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"{ "provider": { "openai": { "models": { "gpt-4": {} } } } }"#;
-        let cfg: Config = parse_jsonc(input).expect("should parse");
+        let cfg: Config = parse_jsonc(input)?;
         let model = &cfg.provider["openai"].models["gpt-4"];
         assert!(!model.disabled);
+        Ok(())
     }
 
     #[test]
-    fn experimental_flags_parsed() {
+    fn experimental_flags_parsed() -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"{ "experimental": { "batch_tool": true, "mcp_timeout": 5000 } }"#;
-        let cfg: Config = parse_jsonc(input).expect("should parse");
+        let cfg: Config = parse_jsonc(input)?;
         assert_eq!(cfg.experimental.batch_tool, Some(true));
         assert_eq!(cfg.experimental.mcp_timeout, Some(5000));
+        Ok(())
     }
 }

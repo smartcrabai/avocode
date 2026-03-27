@@ -267,7 +267,7 @@ mod tests {
     use crate::llm::{ContentPart, MessageRole, sse::SseEvent};
 
     #[test]
-    fn test_to_google_contents_user_message() {
+    fn test_to_google_contents_user_message() -> Result<(), Box<dyn std::error::Error>> {
         let messages = vec![ChatMessage {
             role: MessageRole::User,
             content: vec![ContentPart::Text {
@@ -275,14 +275,15 @@ mod tests {
             }],
         }];
         let result = to_google_contents(&messages);
-        let arr = result.as_array().unwrap();
+        let arr = result.as_array().ok_or("expected array")?;
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["role"], "user");
         assert_eq!(arr[0]["parts"][0]["text"], "Hello");
+        Ok(())
     }
 
     #[test]
-    fn test_to_google_contents_filters_system() {
+    fn test_to_google_contents_filters_system() -> Result<(), Box<dyn std::error::Error>> {
         let messages = vec![
             ChatMessage {
                 role: MessageRole::System,
@@ -298,28 +299,31 @@ mod tests {
             },
         ];
         let result = to_google_contents(&messages);
-        let arr = result.as_array().unwrap();
+        let arr = result.as_array().ok_or("expected array")?;
         assert_eq!(arr.len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn test_parse_google_event_text() {
+    fn test_parse_google_event_text() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: None,
             data: r#"{"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"},"finishReason":"STOP"}]}"#.to_owned(),
         };
-        let delta = parse_google_event(&event).unwrap().unwrap();
+        let delta = parse_google_event(&event)?.ok_or("expected delta")?;
         assert_eq!(delta.text.as_deref(), Some("Hello"));
         assert_eq!(delta.finish_reason, Some(FinishReason::Stop));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_google_event_empty_data() {
+    fn test_parse_google_event_empty_data() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: None,
             data: String::new(),
         };
-        let delta = parse_google_event(&event).unwrap();
+        let delta = parse_google_event(&event)?;
         assert!(delta.is_none());
+        Ok(())
     }
 }

@@ -194,94 +194,106 @@ mod tests {
     }
 
     #[test]
-    fn create_and_get_session_roundtrip() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn create_and_get_session_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/home/user".to_owned());
         let id = session.id.clone();
-        store.create_session(&session).expect("create");
-        let got = store.get_session(&id).expect("get").expect("some");
+        store.create_session(&session)?;
+        let got = store.get_session(&id)?.ok_or("session not found")?;
         assert_eq!(got.id, id);
         assert_eq!(got.project_id, "proj-1");
         assert_eq!(got.directory, "/home/user");
+
+        Ok(())
     }
 
     #[test]
-    fn get_session_returns_none_for_unknown_id() {
-        let store = SessionStore::open_in_memory().expect("store");
-        let result = store.get_session("nonexistent").expect("get");
+    fn get_session_returns_none_for_unknown_id() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let result = store.get_session("nonexistent")?;
         assert!(result.is_none());
+
+        Ok(())
     }
 
     #[test]
-    fn list_sessions_filters_by_project() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn list_sessions_filters_by_project() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let s1 = Session::new("proj-a".to_owned(), "/dir1".to_owned());
         let s2 = Session::new("proj-b".to_owned(), "/dir2".to_owned());
-        store.create_session(&s1).expect("create s1");
-        store.create_session(&s2).expect("create s2");
+        store.create_session(&s1)?;
+        store.create_session(&s2)?;
 
-        let list_a = store.list_sessions("proj-a").expect("list a");
+        let list_a = store.list_sessions("proj-a")?;
         assert_eq!(list_a.len(), 1);
         assert_eq!(list_a[0].project_id, "proj-a");
+
+        Ok(())
     }
 
     #[test]
-    fn update_session_title_persists() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn update_session_title_persists() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
         let id = session.id.clone();
-        store.create_session(&session).expect("create");
-        store
-            .update_session_title(&id, "My Session")
-            .expect("update title");
-        let got = store.get_session(&id).expect("get").expect("some");
+        store.create_session(&session)?;
+        store.update_session_title(&id, "My Session")?;
+        let got = store.get_session(&id)?.ok_or("session not found")?;
         assert_eq!(got.title, Some("My Session".to_owned()));
+
+        Ok(())
     }
 
     #[test]
-    fn archive_session_sets_time_archived() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn archive_session_sets_time_archived() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
         let id = session.id.clone();
-        store.create_session(&session).expect("create");
-        store.archive_session(&id).expect("archive");
-        let got = store.get_session(&id).expect("get").expect("some");
+        store.create_session(&session)?;
+        store.archive_session(&id)?;
+        let got = store.get_session(&id)?.ok_or("session not found")?;
         assert!(got.time_archived.is_some());
+
+        Ok(())
     }
 
     #[test]
-    fn add_and_list_messages_roundtrip() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn add_and_list_messages_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
-        store.create_session(&session).expect("create session");
+        store.create_session(&session)?;
 
         let msg1 = Message::user(session.id.clone(), "hello");
         let msg2 = Message::user(session.id.clone(), "world");
-        store.add_message(&msg1).expect("add msg1");
-        store.add_message(&msg2).expect("add msg2");
+        store.add_message(&msg1)?;
+        store.add_message(&msg2)?;
 
-        let messages = store.list_messages(&session.id).expect("list");
+        let messages = store.list_messages(&session.id)?;
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].id, msg1.id);
         assert_eq!(messages[1].id, msg2.id);
+
+        Ok(())
     }
 
     #[test]
-    fn update_message_persists_changes() {
-        let store = SessionStore::open_in_memory().expect("store");
+    fn update_message_persists_changes() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
         let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
-        store.create_session(&session).expect("create session");
+        store.create_session(&session)?;
 
         let mut msg = Message::assistant(session.id.clone());
-        store.add_message(&msg).expect("add");
+        store.add_message(&msg)?;
 
         msg.parts
             .push(crate::session::message::Part::text("response text"));
         msg.time_updated = crate::session::schema::now_ms();
-        store.update_message(&msg).expect("update");
+        store.update_message(&msg)?;
 
-        let messages = store.list_messages(&session.id).expect("list");
+        let messages = store.list_messages(&session.id)?;
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].parts.len(), 1);
+
+        Ok(())
     }
 }

@@ -86,7 +86,7 @@ mod tests {
     /// Verify that the `StdioTransport` type satisfies `Send`.
     #[test]
     fn test_stdio_transport_is_send() {
-        fn _assert_send<T: Send>() {}
-        _assert_send::<StdioTransport>();
+        fn assert_send<T: Send>() {}
+        assert_send::<StdioTransport>();
     }
 }

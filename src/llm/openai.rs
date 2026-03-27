@@ -278,39 +278,43 @@ mod tests {
     use crate::llm::messages::MessageRole;
 
     #[test]
-    fn test_parse_openai_delta_text() {
+    fn test_parse_openai_delta_text() -> Result<(), Box<dyn std::error::Error>> {
         let data = r#"{"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}"#;
-        let delta = parse_openai_delta(data).unwrap().unwrap();
+        let delta = parse_openai_delta(data)?.ok_or("expected delta")?;
         assert_eq!(delta.text.as_deref(), Some("Hello"));
         assert!(delta.tool_calls.is_empty());
         assert!(delta.finish_reason.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_parse_openai_delta_tool_call() {
+    fn test_parse_openai_delta_tool_call() -> Result<(), Box<dyn std::error::Error>> {
         let data = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","function":{"name":"my_tool","arguments":"{\"key\":"}}]},"finish_reason":null}]}"#;
-        let delta = parse_openai_delta(data).unwrap().unwrap();
+        let delta = parse_openai_delta(data)?.ok_or("expected delta")?;
         assert_eq!(delta.tool_calls.len(), 1);
         assert_eq!(delta.tool_calls[0].id.as_deref(), Some("call_abc"));
         assert_eq!(delta.tool_calls[0].name.as_deref(), Some("my_tool"));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_openai_delta_finish_reason() {
+    fn test_parse_openai_delta_finish_reason() -> Result<(), Box<dyn std::error::Error>> {
         let data = r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#;
-        let delta = parse_openai_delta(data).unwrap().unwrap();
+        let delta = parse_openai_delta(data)?.ok_or("expected delta")?;
         assert_eq!(delta.finish_reason, Some(FinishReason::Stop));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_openai_delta_empty() {
+    fn test_parse_openai_delta_empty() -> Result<(), Box<dyn std::error::Error>> {
         let data = r#"{"choices":[{"delta":{},"finish_reason":null}]}"#;
-        let delta = parse_openai_delta(data).unwrap();
+        let delta = parse_openai_delta(data)?;
         assert!(delta.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_to_openai_messages_user_text() {
+    fn test_to_openai_messages_user_text() -> Result<(), Box<dyn std::error::Error>> {
         let messages = vec![ChatMessage {
             role: MessageRole::User,
             content: vec![ContentPart::Text {
@@ -318,14 +322,15 @@ mod tests {
             }],
         }];
         let result = to_openai_messages(&messages);
-        let arr = result.as_array().unwrap();
+        let arr = result.as_array().ok_or("expected array")?;
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["role"], "user");
         assert_eq!(arr[0]["content"], "Hello");
+        Ok(())
     }
 
     #[test]
-    fn test_to_openai_messages_tool_result() {
+    fn test_to_openai_messages_tool_result() -> Result<(), Box<dyn std::error::Error>> {
         let messages = vec![ChatMessage {
             role: MessageRole::Tool,
             content: vec![ContentPart::ToolResult {
@@ -334,10 +339,11 @@ mod tests {
             }],
         }];
         let result = to_openai_messages(&messages);
-        let arr = result.as_array().unwrap();
+        let arr = result.as_array().ok_or("expected array")?;
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["role"], "tool");
         assert_eq!(arr[0]["tool_call_id"], "call_123");
         assert_eq!(arr[0]["content"], "result");
+        Ok(())
     }
 }

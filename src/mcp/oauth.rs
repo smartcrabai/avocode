@@ -110,26 +110,29 @@ mod tests {
     }
 
     #[test]
-    fn test_device_code_response_deserialize() {
+    fn test_device_code_response_deserialize() -> Result<(), Box<dyn std::error::Error>> {
         let json = r#"{"device_code":"abc123","interval":5}"#;
-        let resp: DeviceCodeResponse = serde_json::from_str(json).expect("deserialize");
+        let resp: DeviceCodeResponse = serde_json::from_str(json)?;
         assert_eq!(resp.device_code, "abc123");
         assert_eq!(resp.interval, Some(5));
+        Ok(())
     }
 
     #[test]
-    fn test_token_response_deserialize_success() {
+    fn test_token_response_deserialize_success() -> Result<(), Box<dyn std::error::Error>> {
         let json = r#"{"access_token":"tok_xyz"}"#;
-        let resp: TokenResponse = serde_json::from_str(json).expect("deserialize");
+        let resp: TokenResponse = serde_json::from_str(json)?;
         assert_eq!(resp.access_token.as_deref(), Some("tok_xyz"));
         assert!(resp.error.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_token_response_deserialize_pending() {
+    fn test_token_response_deserialize_pending() -> Result<(), Box<dyn std::error::Error>> {
         let json = r#"{"error":"authorization_pending"}"#;
-        let resp: TokenResponse = serde_json::from_str(json).expect("deserialize");
+        let resp: TokenResponse = serde_json::from_str(json)?;
         assert!(resp.access_token.is_none());
         assert_eq!(resp.error.as_deref(), Some("authorization_pending"));
+        Ok(())
     }
 }

@@ -265,7 +265,7 @@ mod tests {
                             "cache_read": 1.25
                         },
                         "limit": {
-                            "context": 128000,
+                            "context": 128_000,
                             "output": 16384
                         }
                     }
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(model.id, "gpt-4o");
         assert!(model.capabilities.tools);
         assert!(model.capabilities.vision);
-        assert_eq!(model.cost.input, 2.5);
+        assert!((model.cost.input - 2.5).abs() < f64::EPSILON);
         assert_eq!(model.context_length, Some(128_000));
     }
 

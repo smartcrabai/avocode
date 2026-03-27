@@ -225,7 +225,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mcp_server_config_roundtrip() {
+    fn test_mcp_server_config_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let config = McpServerConfig {
             name: "test-server".to_owned(),
             transport: TransportKind::Stdio,
@@ -235,15 +235,16 @@ mod tests {
             url: None,
             headers: None,
         };
-        let json = serde_json::to_string(&config).expect("serialize");
-        let back: McpServerConfig = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&config)?;
+        let back: McpServerConfig = serde_json::from_str(&json)?;
         assert_eq!(back.name, config.name);
         assert_eq!(back.transport, TransportKind::Stdio);
         assert_eq!(back.command, config.command);
+        Ok(())
     }
 
     #[test]
-    fn test_mcp_server_config_sse_roundtrip() {
+    fn test_mcp_server_config_sse_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let mut headers = HashMap::new();
         headers.insert("Authorization".to_owned(), "Bearer token".to_owned());
         let config = McpServerConfig {
@@ -255,14 +256,15 @@ mod tests {
             url: Some("https://example.com/sse".to_owned()),
             headers: Some(headers),
         };
-        let json = serde_json::to_string(&config).expect("serialize");
-        let back: McpServerConfig = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&config)?;
+        let back: McpServerConfig = serde_json::from_str(&json)?;
         assert_eq!(back.transport, TransportKind::Sse);
         assert_eq!(back.url.as_deref(), Some("https://example.com/sse"));
+        Ok(())
     }
 
     #[test]
-    fn test_mcp_tool_roundtrip() {
+    fn test_mcp_tool_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         let tool = McpTool {
             name: "search".to_owned(),
             description: Some("Search the web".to_owned()),
@@ -274,22 +276,24 @@ mod tests {
                 "required": ["query"]
             }),
         };
-        let json = serde_json::to_string(&tool).expect("serialize");
-        let back: McpTool = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&tool)?;
+        let back: McpTool = serde_json::from_str(&json)?;
         assert_eq!(back.name, "search");
         assert_eq!(back.description.as_deref(), Some("Search the web"));
         assert!(back.input_schema.is_object());
+        Ok(())
     }
 
     #[test]
-    fn test_transport_kind_serde() {
-        let stdio: TransportKind = serde_json::from_str("\"stdio\"").expect("parse");
+    fn test_transport_kind_serde() -> Result<(), Box<dyn std::error::Error>> {
+        let stdio: TransportKind = serde_json::from_str("\"stdio\"")?;
         assert_eq!(stdio, TransportKind::Stdio);
 
-        let sse: TransportKind = serde_json::from_str("\"sse\"").expect("parse");
+        let sse: TransportKind = serde_json::from_str("\"sse\"")?;
         assert_eq!(sse, TransportKind::Sse);
 
-        let http: TransportKind = serde_json::from_str("\"streamableHttp\"").expect("parse");
+        let http: TransportKind = serde_json::from_str("\"streamableHttp\"")?;
         assert_eq!(http, TransportKind::StreamableHttp);
+        Ok(())
     }
 }

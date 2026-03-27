@@ -64,6 +64,22 @@ impl AppContext {
         &self.inner.data_dir
     }
 
+    fn db_path(&self) -> PathBuf {
+        self.inner.data_dir.join("sessions.db")
+    }
+
+    /// Creates the data directory and opens the session store.
+    ///
+    /// # Errors
+    /// Returns an error if the data directory cannot be created or the database cannot be opened.
+    pub fn open_session_store(
+        &self,
+    ) -> Result<crate::session::SessionStore, crate::session::SessionError> {
+        std::fs::create_dir_all(self.data_dir())
+            .map_err(|e| crate::session::SessionError::Other(e.to_string()))?;
+        crate::session::SessionStore::open(&self.db_path())
+    }
+
     #[must_use]
     pub fn event_bus(&self) -> &EventBus {
         &self.inner.event_bus

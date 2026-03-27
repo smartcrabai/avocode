@@ -182,13 +182,13 @@ mod tests {
     }
 
     #[test]
-    fn test_copilot_headers_authorization_value() {
+    fn test_copilot_headers_authorization_value() -> Result<(), Box<dyn std::error::Error>> {
         let headers = copilot_headers("my_secret_token");
         let auth = headers
             .get(header::AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap();
+            .ok_or("missing Authorization header")?
+            .to_str()?;
         assert_eq!(auth, "Bearer my_secret_token");
+        Ok(())
     }
 }

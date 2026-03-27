@@ -127,43 +127,48 @@ mod tests {
     }
 
     #[test]
-    fn from_serde_json_error_conversion() {
-        let json_err = serde_json::from_str::<serde_json::Value>("not json")
-            .expect_err("should fail to parse");
+    fn from_serde_json_error_conversion() -> Result<(), Box<dyn std::error::Error>> {
+        let result = serde_json::from_str::<serde_json::Value>("not json");
+        assert!(result.is_err());
+        let json_err = result.err().ok_or("expected JSON parse error")?;
         let app_err = AppError::from(json_err);
         assert!(matches!(app_err, AppError::Json(_)));
         assert_eq!(app_err.name(), "JsonError");
+        Ok(())
     }
 
     #[test]
-    fn error_object_serialises_without_data_field() {
+    fn error_object_serialises_without_data_field() -> Result<(), Box<dyn std::error::Error>> {
         let obj = ErrorObject::from(AppError::Auth("denied".to_owned()));
-        let json = serde_json::to_string(&obj).expect("serialisation must succeed");
+        let json = serde_json::to_string(&obj)?;
         assert!(json.contains("\"name\":\"AuthError\""));
         assert!(json.contains("\"message\":\"Authentication error: denied\""));
         // skip_serializing_if = "Option::is_none" must suppress the field when absent
         assert!(!json.contains("\"data\""));
+        Ok(())
     }
 
     #[test]
-    fn error_object_serialises_with_data_field() {
+    fn error_object_serialises_with_data_field() -> Result<(), Box<dyn std::error::Error>> {
         let obj = ErrorObject {
             name: "TestError".to_owned(),
             message: "test".to_owned(),
             data: Some(serde_json::json!({"key": "value"})),
         };
-        let json = serde_json::to_string(&obj).expect("serialisation must succeed");
+        let json = serde_json::to_string(&obj)?;
         assert!(json.contains("\"data\""));
         assert!(json.contains("\"key\":\"value\""));
+        Ok(())
     }
 
     #[test]
-    fn error_object_roundtrips_through_json() {
+    fn error_object_roundtrips_through_json() -> Result<(), Box<dyn std::error::Error>> {
         let original = ErrorObject::from(AppError::Config("missing key".to_owned()));
-        let serialised = serde_json::to_string(&original).expect("serialise");
-        let deserialised: ErrorObject = serde_json::from_str(&serialised).expect("deserialise");
+        let serialised = serde_json::to_string(&original)?;
+        let deserialised: ErrorObject = serde_json::from_str(&serialised)?;
         assert_eq!(deserialised.name, original.name);
         assert_eq!(deserialised.message, original.message);
         assert!(deserialised.data.is_none());
+        Ok(())
     }
 }

@@ -302,43 +302,46 @@ mod tests {
     use crate::llm::{ContentPart, MessageRole, sse::SseEvent};
 
     #[test]
-    fn test_parse_anthropic_event_text_delta() {
+    fn test_parse_anthropic_event_text_delta() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: Some("content_block_delta".to_owned()),
             data: r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#.to_owned(),
         };
-        let delta = parse_anthropic_event(&event).unwrap().unwrap();
+        let delta = parse_anthropic_event(&event)?.ok_or("expected delta")?;
         assert_eq!(delta.text.as_deref(), Some("Hello"));
         assert!(delta.tool_calls.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn test_parse_anthropic_event_tool_call_start() {
+    fn test_parse_anthropic_event_tool_call_start() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: Some("content_block_start".to_owned()),
             data: r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01","name":"my_tool"}}"#.to_owned(),
         };
-        let delta = parse_anthropic_event(&event).unwrap().unwrap();
+        let delta = parse_anthropic_event(&event)?.ok_or("expected delta")?;
         assert_eq!(delta.tool_calls.len(), 1);
         assert_eq!(delta.tool_calls[0].name.as_deref(), Some("my_tool"));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_anthropic_event_input_json_delta() {
+    fn test_parse_anthropic_event_input_json_delta() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: Some("content_block_delta".to_owned()),
             data: r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"key\":"}}"#.to_owned(),
         };
-        let delta = parse_anthropic_event(&event).unwrap().unwrap();
+        let delta = parse_anthropic_event(&event)?.ok_or("expected delta")?;
         assert_eq!(delta.tool_calls.len(), 1);
         assert_eq!(
             delta.tool_calls[0].arguments_chunk.as_deref(),
             Some("{\"key\":")
         );
+        Ok(())
     }
 
     #[test]
-    fn test_to_anthropic_messages_filters_system() {
+    fn test_to_anthropic_messages_filters_system() -> Result<(), Box<dyn std::error::Error>> {
         let messages = vec![
             ChatMessage {
                 role: MessageRole::System,
@@ -354,18 +357,20 @@ mod tests {
             },
         ];
         let result = to_anthropic_messages(&messages);
-        let arr = result.as_array().unwrap();
+        let arr = result.as_array().ok_or("expected array")?;
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["role"], "user");
+        Ok(())
     }
 
     #[test]
-    fn test_parse_anthropic_event_message_delta_stop() {
+    fn test_parse_anthropic_event_message_delta_stop() -> Result<(), Box<dyn std::error::Error>> {
         let event = SseEvent {
             event: Some("message_delta".to_owned()),
             data: r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":10}}"#.to_owned(),
         };
-        let delta = parse_anthropic_event(&event).unwrap().unwrap();
+        let delta = parse_anthropic_event(&event)?.ok_or("expected delta")?;
         assert_eq!(delta.finish_reason, Some(FinishReason::Stop));
+        Ok(())
     }
 }

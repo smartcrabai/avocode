@@ -156,56 +156,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_json_rpc_request_serialization() {
+    fn test_json_rpc_request_serialization() -> Result<(), Box<dyn std::error::Error>> {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_owned(),
             id: RpcId::Number(1),
             method: "initialize".to_owned(),
             params: Some(serde_json::json!({"key": "value"})),
         };
-        let json = serde_json::to_string(&req).expect("serialize");
-        let back: JsonRpcRequest = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&req)?;
+        let back: JsonRpcRequest = serde_json::from_str(&json)?;
         assert_eq!(back.jsonrpc, "2.0");
         assert_eq!(back.method, "initialize");
         assert_eq!(back.id, RpcId::Number(1));
+        Ok(())
     }
 
     #[test]
-    fn test_json_rpc_response_serialization() {
+    fn test_json_rpc_response_serialization() -> Result<(), Box<dyn std::error::Error>> {
         let resp = JsonRpcResponse {
             jsonrpc: "2.0".to_owned(),
             id: RpcId::String("abc".to_owned()),
             result: Some(serde_json::json!({"tools": []})),
             error: None,
         };
-        let json = serde_json::to_string(&resp).expect("serialize");
-        let back: JsonRpcResponse = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&resp)?;
+        let back: JsonRpcResponse = serde_json::from_str(&json)?;
         assert_eq!(back.id, RpcId::String("abc".to_owned()));
         assert!(back.error.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_json_rpc_notification_no_id() {
+    fn test_json_rpc_notification_no_id() -> Result<(), Box<dyn std::error::Error>> {
         let notif = JsonRpcNotification {
             jsonrpc: "2.0".to_owned(),
             method: "initialized".to_owned(),
             params: None,
         };
-        let json = serde_json::to_string(&notif).expect("serialize");
+        let json = serde_json::to_string(&notif)?;
         // notifications have no id field
         assert!(!json.contains("\"id\""));
+        Ok(())
     }
 
     #[test]
-    fn test_rpc_id_variants() {
-        let id_num: RpcId = serde_json::from_str("42").expect("parse number");
+    fn test_rpc_id_variants() -> Result<(), Box<dyn std::error::Error>> {
+        let id_num: RpcId = serde_json::from_str("42")?;
         assert_eq!(id_num, RpcId::Number(42));
 
-        let id_str: RpcId = serde_json::from_str("\"req-1\"").expect("parse string");
+        let id_str: RpcId = serde_json::from_str("\"req-1\"")?;
         assert_eq!(id_str, RpcId::String("req-1".to_owned()));
 
-        let id_null: RpcId = serde_json::from_str("null").expect("parse null");
+        let id_null: RpcId = serde_json::from_str("null")?;
         assert_eq!(id_null, RpcId::Null);
+        Ok(())
     }
 
     #[test]
