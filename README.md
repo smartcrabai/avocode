@@ -112,9 +112,11 @@ Uses your ChatGPT Codex subscription. Choose between a headless device code flow
 
 Config files use JSON with Comments (JSONC). Three layers are merged in order:
 
-1. System: `/etc/avocode/config.jsonc`
-2. User: `~/.config/avocode/config.jsonc`
-3. Project: `.avocode/config.jsonc`
+1. System: `/etc/opencode/opencode.jsonc` (Linux) · `/Library/Application Support/opencode/opencode.jsonc` (macOS)
+2. User: `~/.config/opencode/opencode.jsonc`
+3. Project: `opencode.jsonc` or `.opencode/opencode.jsonc` (walks up to git root)
+
+Config paths are compatible with [OpenCode](https://github.com/anomalyco/opencode) — existing OpenCode configurations work as-is.
 
 ```jsonc
 {
