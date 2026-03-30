@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod models_dev;
 pub mod registry;
 pub mod schema;
