@@ -1,5 +1,5 @@
 [package]
-description = ""
+description = "An AI coding agent with support for 15+ LLM providers, multiple interfaces (TUI/CLI/HTTP), and extensible tools"
 edition = "2024"
 license = "MIT"
 name = "avocode"
