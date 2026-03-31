@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::provider::ProviderInfo;
+use crate::session::store::SessionStore;
 
 /// Events that can be sent via SSE to clients
 #[derive(Debug, Clone, serde::Serialize)]
@@ -41,6 +42,9 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<ServerEvent>,
     /// Dynamic provider/model catalog built from connected providers.
     pub provider_catalog: Arc<Vec<ProviderInfo>>,
+    /// Session store used by handlers that need to read/write sessions.
+    /// `None` when the server is started without a store (e.g. tests that only need routing).
+    pub session_store: Option<Arc<SessionStore>>,
 }
 
 impl AppState {
@@ -50,6 +54,7 @@ impl AppState {
         Self {
             event_tx,
             provider_catalog: Arc::new(vec![]),
+            session_store: None,
         }
     }
 
@@ -59,6 +64,15 @@ impl AppState {
     pub fn with_catalog(catalog: Vec<ProviderInfo>) -> Self {
         Self {
             provider_catalog: Arc::new(catalog),
+            ..Self::new()
+        }
+    }
+
+    /// Create an `AppState` pre-populated with a session store.
+    #[must_use]
+    pub fn with_store(store: SessionStore) -> Self {
+        Self {
+            session_store: Some(Arc::new(store)),
             ..Self::new()
         }
     }

@@ -30,6 +30,9 @@ pub struct Session {
     pub time_updated: i64,
     pub time_compacting: Option<i64>,
     pub time_archived: Option<i64>,
+    /// Opaque reference to the config last used for this session (path, preset, or profile).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -65,6 +68,7 @@ impl Session {
             time_updated: now,
             time_compacting: None,
             time_archived: None,
+            config_ref: None,
         }
     }
 }
@@ -107,5 +111,47 @@ mod tests {
         assert_eq!(s.version, 0);
         assert!(s.time_created > 0);
         assert_eq!(s.time_created, s.time_updated);
+    }
+
+    #[test]
+    fn session_new_sets_config_ref_to_none() {
+        let s = Session::new("proj-1".to_owned(), "/home/user".to_owned());
+        assert!(s.config_ref.is_none());
+    }
+
+    #[test]
+    fn session_with_config_ref_roundtrips_json() -> Result<(), serde_json::Error> {
+        let mut s = Session::new("proj-1".to_owned(), "/home/user".to_owned());
+        s.config_ref = Some("~/.config/avocode/myconfig.toml".to_owned());
+        let json = serde_json::to_string(&s)?;
+        let back: Session = serde_json::from_str(&json)?;
+        assert_eq!(
+            back.config_ref,
+            Some("~/.config/avocode/myconfig.toml".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn session_json_without_config_ref_deserializes_to_none() -> Result<(), serde_json::Error> {
+        let json = r#"{
+            "id": "test-id",
+            "project_id": "proj-1",
+            "slug": "session-2026-03-31",
+            "directory": "/home/user",
+            "title": null,
+            "version": 0,
+            "share_url": null,
+            "summary": null,
+            "permission": [],
+            "parent_id": null,
+            "time_created": 1234567890,
+            "time_updated": 1234567890,
+            "time_compacting": null,
+            "time_archived": null
+        }"#;
+        let session: Session = serde_json::from_str(json)?;
+        assert!(session.config_ref.is_none());
+        Ok(())
     }
 }

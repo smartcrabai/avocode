@@ -23,6 +23,10 @@ pub fn create_router(state: AppState) -> Router {
             "/session",
             get(routes::session::list_sessions).post(routes::session::create_session),
         )
+        .route(
+            "/session/defaults",
+            get(routes::session::get_session_defaults),
+        )
         .route("/session/{id}", get(routes::session::get_session))
         .route("/session/{id}/message", post(routes::session::send_message))
         .route("/provider", get(routes::provider::list_providers))
@@ -44,7 +48,13 @@ pub fn create_router(state: AppState) -> Router {
 ///
 /// Returns a [`ServerError::Internal`] if binding or serving fails.
 pub async fn serve(host: &str, port: u16) -> Result<(), ServerError> {
-    let state = AppState::new();
+    let data_dir = dirs_next::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("avocode");
+    std::fs::create_dir_all(&data_dir).map_err(|e| ServerError::Internal(e.to_string()))?;
+    let store = crate::session::SessionStore::open(&data_dir.join("sessions.db"))
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
+    let state = AppState::with_store(store);
     let app = create_router(state);
     let addr: std::net::SocketAddr = format!("{host}:{port}")
         .parse()
@@ -62,10 +72,39 @@ pub async fn serve(host: &str, port: u16) -> Result<(), ServerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt as _;
+
+    use crate::session::schema::Session;
+    use crate::session::store::SessionStore;
 
     #[test]
     fn create_router_does_not_panic() {
         let state = AppState::new();
         let _router = create_router(state);
+    }
+
+    #[tokio::test]
+    async fn get_session_defaults_returns_200_for_known_directory()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let mut session = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        session.config_ref = Some("my-config.toml".to_owned());
+        store.create_session(&session)?;
+
+        let state = AppState::with_store(store);
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/session/defaults?directory=%2Fworkspace%2Fproj")
+                    .body(Body::empty())?,
+            )
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        Ok(())
     }
 }

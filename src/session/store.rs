@@ -39,7 +39,9 @@ impl SessionStore {
                  session_id TEXT NOT NULL,
                  data TEXT NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id);",
+             CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id);
+             CREATE INDEX IF NOT EXISTS idx_sessions_directory
+               ON sessions(json_extract(data, '$.directory'));",
         )
         .map_err(super::SessionError::Sqlite)
     }
@@ -168,6 +170,36 @@ impl SessionStore {
         Ok(messages)
     }
 
+    /// Return the most recent non-`None` `config_ref` among all sessions whose
+    /// `directory` exactly matches the given value, or `None` if no such session exists.
+    ///
+    /// # Errors
+    /// Returns [`super::SessionError`] on `SQLite` or deserialization failure.
+    pub fn latest_config_for_directory(
+        &self,
+        directory: &str,
+    ) -> Result<Option<String>, super::SessionError> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT json_extract(data, '$.config_ref') \
+                 FROM sessions \
+                 WHERE json_extract(data, '$.directory') = ?1 \
+                   AND json_extract(data, '$.config_ref') IS NOT NULL \
+                 ORDER BY json_extract(data, '$.time_updated') DESC \
+                 LIMIT 1",
+            )
+            .map_err(super::SessionError::Sqlite)?;
+        let mut rows = stmt
+            .query(params![directory])
+            .map_err(super::SessionError::Sqlite)?;
+        if let Some(row) = rows.next().map_err(super::SessionError::Sqlite)? {
+            let config_ref: String = row.get(0).map_err(super::SessionError::Sqlite)?;
+            return Ok(Some(config_ref));
+        }
+        Ok(None)
+    }
+
     /// # Errors
     /// Returns [`super::SessionError`] on serialization or `SQLite` failure.
     pub fn update_message(&self, message: &Message) -> Result<(), super::SessionError> {
@@ -273,6 +305,95 @@ mod tests {
         assert_eq!(messages[0].id, msg1.id);
         assert_eq!(messages[1].id, msg2.id);
 
+        Ok(())
+    }
+
+    #[test]
+    fn config_ref_persists_and_restores() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let mut session = Session::new("proj-1".to_owned(), "/home/user".to_owned());
+        session.config_ref = Some("~/.config/avocode/myconfig.toml".to_owned());
+        let id = session.id.clone();
+        store.create_session(&session)?;
+        let got = store.get_session(&id)?.ok_or("session not found")?;
+        assert_eq!(
+            got.config_ref,
+            Some("~/.config/avocode/myconfig.toml".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn latest_config_for_directory_returns_most_recent_config_ref()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let mut s1 = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        s1.config_ref = Some("config-v1".to_owned());
+        s1.time_created = 1_000;
+        s1.time_updated = 1_000;
+        store.create_session(&s1)?;
+
+        let mut s2 = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        s2.config_ref = Some("config-v2".to_owned());
+        s2.time_created = 2_000;
+        s2.time_updated = 2_000;
+        store.create_session(&s2)?;
+
+        let result = store.latest_config_for_directory("/workspace/proj")?;
+        assert_eq!(result, Some("config-v2".to_owned()));
+        Ok(())
+    }
+
+    #[test]
+    fn latest_config_for_directory_does_not_pick_other_directories()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let mut s = Session::new("proj-1".to_owned(), "/workspace/other".to_owned());
+        s.config_ref = Some("other-config".to_owned());
+        store.create_session(&s)?;
+
+        let result = store.latest_config_for_directory("/workspace/proj")?;
+        assert!(result.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn latest_config_for_directory_returns_none_for_unknown_directory()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let result = store.latest_config_for_directory("/nonexistent")?;
+        assert!(result.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn latest_config_for_directory_returns_none_when_all_sessions_have_no_config_ref()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let s = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        store.create_session(&s)?;
+        let result = store.latest_config_for_directory("/workspace/proj")?;
+        assert!(result.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn latest_config_for_directory_skips_sessions_with_no_config_ref()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let mut s1 = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        s1.config_ref = Some("config-v1".to_owned());
+        s1.time_created = 1_000;
+        s1.time_updated = 1_000;
+        store.create_session(&s1)?;
+
+        let mut s2 = Session::new("proj-1".to_owned(), "/workspace/proj".to_owned());
+        s2.time_created = 2_000;
+        s2.time_updated = 2_000;
+        store.create_session(&s2)?;
+
+        let result = store.latest_config_for_directory("/workspace/proj")?;
+        assert_eq!(result, Some("config-v1".to_owned()));
         Ok(())
     }
 

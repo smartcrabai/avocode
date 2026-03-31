@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +62,35 @@ pub async fn send_message(
     Ok(Json(
         serde_json::json!({ "ok": true, "message": req.content }),
     ))
+}
+
+/// GET /session/defaults?directory=... → return the last-used `config_ref` for a directory
+///
+/// # Errors
+///
+/// Returns a [`ServerError`] if the lookup fails.
+pub async fn get_session_defaults(
+    State(state): State<AppState>,
+    Query(query): Query<SessionDefaultsQuery>,
+) -> Result<Json<SessionDefaultsResponse>, ServerError> {
+    let store = state
+        .session_store
+        .as_ref()
+        .ok_or_else(|| ServerError::Internal("session store not initialised".to_owned()))?;
+    let config_ref = store
+        .latest_config_for_directory(&query.directory)
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
+    Ok(Json(SessionDefaultsResponse { config_ref }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SessionDefaultsQuery {
+    pub directory: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionDefaultsResponse {
+    pub config_ref: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
