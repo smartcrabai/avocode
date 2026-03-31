@@ -7,18 +7,16 @@ pub struct ModelsArgs {
 
 /// # Errors
 ///
-/// Returns `CliError` if the command fails.
-#[expect(clippy::unused_async, reason = "async is part of the public CLI API")]
+/// Returns `CliError` if the dynamic provider list cannot be loaded.
 pub async fn execute(args: ModelsArgs) -> crate::cli::Result<()> {
-    let registry = crate::provider::ProviderRegistry::new(crate::provider::builtin_providers());
+    let providers = crate::provider::models_dev::fetch_dynamic_providers().await?;
+    let mut choices = crate::provider::models_dev::to_model_choices(&providers);
 
-    let models: Vec<&crate::provider::ModelInfo> = if let Some(ref provider_id) = args.provider {
-        registry.list_models(provider_id)
-    } else {
-        registry.all_models()
-    };
+    if let Some(ref provider_id) = args.provider {
+        choices.retain(|c| &c.provider_id == provider_id);
+    }
 
-    if models.is_empty() {
+    if choices.is_empty() {
         if let Some(provider_id) = &args.provider {
             println!("No models found for provider: {provider_id}");
         } else {
@@ -27,12 +25,12 @@ pub async fn execute(args: ModelsArgs) -> crate::cli::Result<()> {
         return Ok(());
     }
 
-    println!("Available models ({}):", models.len());
-    for m in &models {
-        let ctx_str = m
+    println!("Available models ({}):", choices.len());
+    for c in &choices {
+        let ctx_str = c
             .context_length
-            .map_or_else(String::new, |c| format!(" ctx={c}"));
-        println!("  {}/{} - {}{}", m.provider_id, m.id, m.name, ctx_str);
+            .map_or_else(String::new, |ctx| format!(" ctx={ctx}"));
+        println!("  {} - {}{}", c.qualified_id(), c.display_name, ctx_str);
     }
     Ok(())
 }

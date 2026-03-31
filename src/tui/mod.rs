@@ -23,6 +23,8 @@ use widgets::{chat::ChatWidget, input::InputWidget, sidebar::SidebarWidget, stat
 pub enum TuiError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+    #[error(transparent)]
+    Provider(#[from] crate::provider::ProviderError),
 }
 
 pub type Result<T> = std::result::Result<T, TuiError>;
@@ -32,18 +34,18 @@ pub type Result<T> = std::result::Result<T, TuiError>;
 /// # Errors
 ///
 /// Returns an error if the terminal cannot be initialized or an IO error occurs.
-#[expect(
-    clippy::unused_async,
-    reason = "async is part of the public API for future LLM integration"
-)]
 pub async fn run() -> Result<()> {
+    // Load providers before entering raw mode so failures produce clean error output.
+    let providers = crate::provider::models_dev::fetch_dynamic_providers().await?;
+    let choices = crate::provider::models_dev::to_model_choices(&providers);
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::with_models(choices, None);
 
     loop {
         terminal.draw(|frame| {
@@ -91,9 +93,9 @@ pub async fn run() -> Result<()> {
             );
             StatusBar {
                 theme: &app.theme,
-                model: "anthropic/claude-opus-4-5",
+                model: app.selected_model.as_deref().unwrap_or("(no model)"),
                 mode: "INSERT",
-                keys_hint: "^C quit | ^B sidebar | ^T theme",
+                keys_hint: "^C quit | ^B sidebar | ^T theme | ^P model",
             }
             .render(main_chunks[2], frame.buffer_mut());
         })?;

@@ -22,6 +22,8 @@ pub enum CliError {
     Server(#[from] crate::server::ServerError),
     #[error(transparent)]
     Tui(#[from] crate::tui::TuiError),
+    #[error(transparent)]
+    Provider(#[from] crate::provider::ProviderError),
 }
 
 pub type Result<T> = std::result::Result<T, CliError>;

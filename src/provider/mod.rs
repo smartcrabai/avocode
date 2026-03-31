@@ -14,6 +14,6 @@ pub enum ProviderError {
     Serde(#[from] serde_json::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Provider not found: {0}")]
-    NotFound(String),
+    #[error("Empty catalog: API returned no providers")]
+    EmptyCatalog,
 }

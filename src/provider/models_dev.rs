@@ -1,25 +1,145 @@
 use crate::provider::ProviderError;
-use crate::provider::registry::builtin_providers;
 use crate::provider::schema::{ModelCapabilities, ModelCost, ModelInfo, ModelStatus, ProviderInfo};
 
-/// Fetch provider/model definitions from models.dev with local file caching (24h TTL).
+/// User-facing flattened representation of a model choice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelChoice {
+    pub provider_id: String,
+    pub model_id: String,
+    pub display_name: String,
+    pub context_length: Option<u64>,
+}
+
+impl ModelChoice {
+    /// Returns `"provider_id/model_id"`.
+    #[must_use]
+    pub fn qualified_id(&self) -> String {
+        format!("{}/{}", self.provider_id, self.model_id)
+    }
+}
+
+/// Strict dynamic loader: returns only API or TTL-valid cache data.
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError`] if the HTTP request fails and the cache is unavailable.
-/// Falls back to [`builtin_providers`] on any parse or network error.
-pub async fn fetch_providers() -> Result<Vec<ProviderInfo>, ProviderError> {
-    if let Some(cached) = try_cache() {
-        return Ok(cached);
+/// Returns [`ProviderError::EmptyCatalog`] when the catalog is empty or invalid.
+/// Returns other [`ProviderError`] variants on network or IO failure.
+pub async fn fetch_dynamic_providers() -> Result<Vec<ProviderInfo>, ProviderError> {
+    if let Some(providers) = try_cache()
+        && !providers.is_empty()
+    {
+        return Ok(providers);
     }
-    let client = reqwest::Client::new();
-    match fetch_from_api(&client).await {
-        Ok(providers) => {
-            let _ = write_cache(&providers);
-            Ok(providers)
-        }
-        Err(_) => Ok(builtin_providers()),
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let resp = client
+        .get("https://models.dev/api.json")
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let providers = parse_api_response_strict(&resp)?;
+    let _ = write_cache(&providers);
+
+    Ok(providers)
+}
+
+/// Convert a provider list into a deterministically sorted, flat `ModelChoice` list.
+/// Sort order: `provider_id` ascending, then `model_id` ascending.
+#[must_use]
+pub fn to_model_choices(providers: &[ProviderInfo]) -> Vec<ModelChoice> {
+    let mut choices: Vec<ModelChoice> = providers
+        .iter()
+        .flat_map(|p| {
+            p.models.iter().map(|m| ModelChoice {
+                provider_id: p.id.clone(),
+                model_id: m.id.clone(),
+                display_name: m.name.clone(),
+                context_length: m.context_length,
+            })
+        })
+        .collect();
+    choices.sort_by(|a, b| {
+        a.provider_id
+            .cmp(&b.provider_id)
+            .then(a.model_id.cmp(&b.model_id))
+    });
+    choices
+}
+
+fn parse_providers_from_object(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<ProviderInfo> {
+    let mut providers = Vec::new();
+
+    for (provider_key, provider_val) in obj {
+        let id = provider_val
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(provider_key)
+            .to_string();
+
+        let name = provider_val
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(&id)
+            .to_string();
+
+        let env: Vec<String> = provider_val
+            .get("env")
+            .and_then(serde_json::Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|e| e.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let Some(models_val) = provider_val
+            .get("models")
+            .and_then(serde_json::Value::as_object)
+        else {
+            providers.push(ProviderInfo {
+                id,
+                name,
+                env,
+                models: vec![],
+            });
+            continue;
+        };
+
+        let models: Vec<ModelInfo> = models_val
+            .iter()
+            .map(|(model_key, model_val)| parse_model(model_key, model_val, &id))
+            .collect();
+
+        providers.push(ProviderInfo {
+            id,
+            name,
+            env,
+            models,
+        });
     }
+
+    providers
+}
+
+fn parse_api_response_strict(
+    value: &serde_json::Value,
+) -> Result<Vec<ProviderInfo>, ProviderError> {
+    let Some(obj) = value.as_object() else {
+        return Err(ProviderError::EmptyCatalog);
+    };
+
+    if obj.is_empty() {
+        return Err(ProviderError::EmptyCatalog);
+    }
+
+    Ok(parse_providers_from_object(obj))
 }
 
 fn cache_path() -> std::path::PathBuf {
@@ -31,7 +151,6 @@ fn cache_path() -> std::path::PathBuf {
 
 fn try_cache() -> Option<Vec<ProviderInfo>> {
     let path = cache_path();
-    let data = std::fs::read_to_string(&path).ok()?;
     let age = std::fs::metadata(&path)
         .ok()?
         .modified()
@@ -41,6 +160,7 @@ fn try_cache() -> Option<Vec<ProviderInfo>> {
     if age > std::time::Duration::from_secs(86400) {
         return None;
     }
+    let data = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
@@ -52,17 +172,6 @@ fn write_cache(providers: &[ProviderInfo]) -> Result<(), ProviderError> {
     let data = serde_json::to_string(providers)?;
     std::fs::write(&path, data)?;
     Ok(())
-}
-
-async fn fetch_from_api(client: &reqwest::Client) -> Result<Vec<ProviderInfo>, ProviderError> {
-    let resp = client
-        .get("https://models.dev/api.json")
-        .send()
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-
-    Ok(parse_api_response(&resp))
 }
 
 fn parse_model(model_key: &str, model_val: &serde_json::Value, provider_id: &str) -> ModelInfo {
@@ -157,138 +266,137 @@ fn parse_model(model_key: &str, model_val: &serde_json::Value, provider_id: &str
     }
 }
 
-fn parse_api_response(value: &serde_json::Value) -> Vec<ProviderInfo> {
-    let Some(obj) = value.as_object() else {
-        return builtin_providers();
-    };
-
-    let mut providers = Vec::new();
-
-    for (provider_key, provider_val) in obj {
-        let id = provider_val
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(provider_key)
-            .to_string();
-
-        let name = provider_val
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(&id)
-            .to_string();
-
-        let env: Vec<String> = provider_val
-            .get("env")
-            .and_then(serde_json::Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|e| e.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let Some(models_val) = provider_val
-            .get("models")
-            .and_then(serde_json::Value::as_object)
-        else {
-            providers.push(ProviderInfo {
-                id,
-                name,
-                env,
-                models: vec![],
-            });
-            continue;
-        };
-
-        let models: Vec<ModelInfo> = models_val
-            .iter()
-            .map(|(model_key, model_val)| parse_model(model_key, model_val, &id))
-            .collect();
-
-        providers.push(ProviderInfo {
-            id,
-            name,
-            env,
-            models,
-        });
-    }
-
-    if providers.is_empty() {
-        return builtin_providers();
-    }
-
-    providers
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_api_response_empty_object_falls_back_to_builtin() {
-        let value = serde_json::json!({});
-        let providers = parse_api_response(&value);
-        // Should fall back to builtin providers when response is empty
-        assert!(!providers.is_empty());
-    }
-
-    #[test]
-    fn test_parse_api_response_non_object_falls_back_to_builtin() {
-        let value = serde_json::json!(null);
-        let providers = parse_api_response(&value);
-        assert!(!providers.is_empty());
-    }
-
-    #[test]
-    fn test_parse_api_response_valid_provider() {
-        let value = serde_json::json!({
-            "openai": {
-                "id": "openai",
-                "name": "OpenAI",
-                "env": ["OPENAI_API_KEY"],
-                "models": {
-                    "gpt-4o": {
-                        "id": "gpt-4o",
-                        "name": "GPT-4o",
-                        "family": "gpt",
-                        "tool_call": true,
-                        "reasoning": false,
-                        "temperature": true,
-                        "attachment": true,
-                        "modalities": {
-                            "input": ["text", "image"],
-                            "output": ["text"]
-                        },
-                        "cost": {
-                            "input": 2.5,
-                            "output": 10.0,
-                            "cache_read": 1.25
-                        },
-                        "limit": {
-                            "context": 128_000,
-                            "output": 16384
-                        }
-                    }
-                }
-            }
-        });
-
-        let providers = parse_api_response(&value);
-        assert_eq!(providers.len(), 1);
-        assert_eq!(providers[0].id, "openai");
-        assert_eq!(providers[0].models.len(), 1);
-        let model = &providers[0].models[0];
-        assert_eq!(model.id, "gpt-4o");
-        assert!(model.capabilities.tools);
-        assert!(model.capabilities.vision);
-        assert!((model.cost.input - 2.5).abs() < f64::EPSILON);
-        assert_eq!(model.context_length, Some(128_000));
-    }
 
     #[test]
     fn test_cache_path_not_empty() {
         let path = cache_path();
         assert!(path.to_str().is_some_and(|s| !s.is_empty()));
         assert!(path.ends_with("models.json"));
+    }
+
+    // ---- parse_api_response_strict tests ----
+
+    #[test]
+    fn test_parse_api_response_strict_empty_object_returns_error() {
+        let value = serde_json::json!({});
+        let result = parse_api_response_strict(&value);
+        assert!(
+            matches!(result, Err(ProviderError::EmptyCatalog)),
+            "expected EmptyCatalog, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_api_response_strict_non_object_returns_error() {
+        let value = serde_json::json!(null);
+        let result = parse_api_response_strict(&value);
+        assert!(result.is_err(), "expected Err but got Ok");
+    }
+
+    #[test]
+    fn test_parse_api_response_strict_valid_provider_returns_ok() {
+        let value = serde_json::json!({
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "models": {
+                    "gpt-4o": { "id": "gpt-4o", "name": "GPT-4o" }
+                }
+            }
+        });
+        let result = parse_api_response_strict(&value);
+        let providers = result.unwrap_or_else(|e| panic!("should parse valid response: {e}"));
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].id, "openai");
+        assert_eq!(providers[0].models.len(), 1);
+    }
+
+    // ---- to_model_choices tests ----
+
+    fn make_provider(id: &str, model_ids: &[&str]) -> ProviderInfo {
+        let models = model_ids
+            .iter()
+            .map(|&mid| ModelInfo {
+                id: mid.to_string(),
+                name: mid.to_string(),
+                provider_id: id.to_string(),
+                family: None,
+                capabilities: ModelCapabilities::default(),
+                cost: ModelCost::default(),
+                context_length: None,
+                output_length: None,
+                status: ModelStatus::Active,
+            })
+            .collect();
+        ProviderInfo {
+            id: id.to_string(),
+            name: id.to_string(),
+            env: vec![],
+            models,
+        }
+    }
+
+    #[test]
+    fn test_to_model_choices_qualified_id_format() {
+        let providers = vec![make_provider("anthropic", &["claude-3-5-sonnet"])];
+        let choices = to_model_choices(&providers);
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].qualified_id(), "anthropic/claude-3-5-sonnet");
+        assert_eq!(choices[0].provider_id, "anthropic");
+        assert_eq!(choices[0].model_id, "claude-3-5-sonnet");
+    }
+
+    #[test]
+    fn test_to_model_choices_sorted_deterministically() {
+        let providers = vec![
+            make_provider("openai", &["gpt-4o", "gpt-3.5-turbo"]),
+            make_provider("anthropic", &["claude-opus-4", "claude-sonnet-4"]),
+        ];
+        let choices1 = to_model_choices(&providers);
+        let choices2 = to_model_choices(&providers);
+        assert_eq!(choices1.len(), choices2.len());
+        for (a, b) in choices1.iter().zip(choices2.iter()) {
+            assert_eq!(a.qualified_id(), b.qualified_id());
+        }
+        // sorted: provider_id ascending, then model_id ascending
+        assert_eq!(choices1[0].provider_id, "anthropic");
+        assert_eq!(choices1[0].model_id, "claude-opus-4");
+        assert_eq!(choices1[1].model_id, "claude-sonnet-4");
+        assert_eq!(choices1[2].provider_id, "openai");
+        assert_eq!(choices1[2].model_id, "gpt-3.5-turbo");
+        assert_eq!(choices1[3].model_id, "gpt-4o");
+    }
+
+    #[test]
+    fn test_to_model_choices_same_model_id_different_providers_get_separate_entries() {
+        let providers = vec![
+            make_provider("openai", &["gpt-4o"]),
+            make_provider("azure", &["gpt-4o"]),
+        ];
+        let choices = to_model_choices(&providers);
+        assert_eq!(choices.len(), 2);
+        assert!(choices.iter().any(|c| c.qualified_id() == "azure/gpt-4o"));
+        assert!(choices.iter().any(|c| c.qualified_id() == "openai/gpt-4o"));
+    }
+
+    #[test]
+    fn test_to_model_choices_empty_providers_returns_empty() {
+        let providers: Vec<ProviderInfo> = vec![];
+        let choices = to_model_choices(&providers);
+        assert!(choices.is_empty());
+    }
+
+    #[test]
+    fn test_to_model_choices_provider_without_models_skipped() {
+        let providers = vec![
+            make_provider("empty-provider", &[]),
+            make_provider("anthropic", &["claude-opus-4"]),
+        ];
+        let choices = to_model_choices(&providers);
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].provider_id, "anthropic");
     }
 }
