@@ -96,7 +96,7 @@ impl StatefulWidget for ChatWidget<'_> {
             lines.push(Line::from(vec![
                 Span::styled("Assistant: ", Style::default().fg(self.theme.assistant_msg)),
                 Span::raw(streaming.clone()),
-                Span::styled("▌", Style::default().fg(self.theme.accent)),
+                Span::styled("|", Style::default().fg(self.theme.accent)),
             ]));
         }
 

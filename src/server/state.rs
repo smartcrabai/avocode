@@ -1,4 +1,7 @@
+use std::sync::Arc;
 use tokio::sync::broadcast;
+
+use crate::provider::ProviderInfo;
 
 /// Events that can be sent via SSE to clients
 #[derive(Debug, Clone, serde::Serialize)]
@@ -36,13 +39,28 @@ pub enum ServerEvent {
 #[derive(Clone)]
 pub struct AppState {
     pub event_tx: broadcast::Sender<ServerEvent>,
+    /// Dynamic provider/model catalog built from connected providers.
+    pub provider_catalog: Arc<Vec<ProviderInfo>>,
 }
 
 impl AppState {
     #[must_use]
     pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(1024);
-        Self { event_tx }
+        Self {
+            event_tx,
+            provider_catalog: Arc::new(vec![]),
+        }
+    }
+
+    /// Create an `AppState` pre-populated with a provider catalog.
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_catalog(catalog: Vec<ProviderInfo>) -> Self {
+        Self {
+            provider_catalog: Arc::new(catalog),
+            ..Self::new()
+        }
     }
 
     #[must_use]
@@ -79,12 +97,13 @@ mod tests {
     }
 
     #[test]
-    fn server_event_serializes_as_tagged_json() {
+    fn server_event_serializes_as_tagged_json() -> Result<(), serde_json::Error> {
         let event = ServerEvent::SessionUpdated {
             session_id: "abc".to_owned(),
         };
-        let json = serde_json::to_string(&event).unwrap_or_default();
+        let json = serde_json::to_string(&event)?;
         assert!(json.contains("\"type\":\"session_updated\""));
         assert!(json.contains("\"session_id\":\"abc\""));
+        Ok(())
     }
 }
