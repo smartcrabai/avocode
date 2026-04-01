@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use super::{message::Message, schema::Session};
 
+#[derive(Clone)]
 pub struct SessionStore {
     conn: Arc<Mutex<Connection>>,
 }
@@ -88,6 +89,27 @@ impl SessionStore {
     pub fn list_sessions(&self, project_id: &str) -> Result<Vec<Session>, super::SessionError> {
         let conn = self.lock()?;
         let mut stmt = conn
+            .prepare("SELECT data FROM sessions WHERE json_extract(data, '$.project_id') = ?1")
+            .map_err(super::SessionError::Sqlite)?;
+        let sessions = stmt
+            .query_map(params![project_id], |row| {
+                let data: String = row.get(0)?;
+                Ok(data)
+            })
+            .map_err(super::SessionError::Sqlite)?
+            .filter_map(Result::ok)
+            .filter_map(|data| serde_json::from_str::<Session>(&data).ok())
+            .collect();
+        Ok(sessions)
+    }
+
+    /// List all sessions regardless of project.
+    ///
+    /// # Errors
+    /// Returns [`super::SessionError`] on `SQLite` failure.
+    pub fn list_all_sessions(&self) -> Result<Vec<Session>, super::SessionError> {
+        let conn = self.lock()?;
+        let mut stmt = conn
             .prepare("SELECT data FROM sessions")
             .map_err(super::SessionError::Sqlite)?;
         let sessions = stmt
@@ -98,7 +120,6 @@ impl SessionStore {
             .map_err(super::SessionError::Sqlite)?
             .filter_map(Result::ok)
             .filter_map(|data| serde_json::from_str::<Session>(&data).ok())
-            .filter(|s| s.project_id == project_id)
             .collect();
         Ok(sessions)
     }

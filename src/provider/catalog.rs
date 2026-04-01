@@ -277,6 +277,24 @@ pub fn apply_model_overrides(
         .collect()
 }
 
+/// Parse a qualified model identifier in `"provider_id/model_id"` format.
+///
+/// Returns `None` if the format is invalid (no slash present, or empty parts).
+///
+/// # Examples
+/// ```
+/// assert_eq!(avocode::provider::catalog::parse_qualified_model("openai/gpt-4o"), Some(("openai", "gpt-4o")));
+/// assert_eq!(avocode::provider::catalog::parse_qualified_model("gpt-4o"), None);
+/// ```
+#[must_use]
+pub fn parse_qualified_model(input: &str) -> Option<(&str, &str)> {
+    let (provider, model) = input.split_once('/')?;
+    if provider.is_empty() || model.is_empty() {
+        return None;
+    }
+    Some((provider, model))
+}
+
 /// Resolve the model to use for a session.
 ///
 /// Priority order:
@@ -309,6 +327,7 @@ pub fn resolve_default_model<'a>(
 }
 
 #[cfg(test)]
+#[expect(clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::config::schema::{ModelOverride, ProviderConfig};
@@ -897,5 +916,57 @@ mod tests {
 
         // Then: empty — no panic or unwrap required
         assert!(all_models.is_empty());
+    }
+
+    // ─── qualified model parsing ────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_qualified_model_valid_format() {
+        // Given: a qualified model identifier "openai/gpt-4o"
+        // When: parse
+        let result = parse_qualified_model("openai/gpt-4o");
+        // Then: returns (provider, model)
+        let (provider, model) = result.expect("should parse valid format");
+        assert_eq!(provider, "openai");
+        assert_eq!(model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_parse_qualified_model_no_slash_returns_none() {
+        // Given: a bare model id without slash
+        // When / Then: returns None
+        assert!(parse_qualified_model("gpt-4o").is_none());
+    }
+
+    #[test]
+    fn test_parse_qualified_model_empty_provider_returns_none() {
+        // Given: identifier starting with slash
+        // When / Then: returns None (empty provider)
+        assert!(parse_qualified_model("/gpt-4o").is_none());
+    }
+
+    #[test]
+    fn test_parse_qualified_model_empty_model_returns_none() {
+        // Given: identifier ending with slash
+        // When / Then: returns None (empty model)
+        assert!(parse_qualified_model("openai/").is_none());
+    }
+
+    #[test]
+    fn test_parse_qualified_model_empty_string_returns_none() {
+        // Given: empty string
+        // When / Then: returns None
+        assert!(parse_qualified_model("").is_none());
+    }
+
+    #[test]
+    fn test_parse_qualified_model_multiple_slashes_takes_first() {
+        // Given: identifier with multiple slashes (e.g., "provider/model/sub")
+        // When: parse
+        let result = parse_qualified_model("openai/gpt-4o/extra");
+        // Then: splits at first slash
+        let (provider, model) = result.expect("should parse");
+        assert_eq!(provider, "openai");
+        assert_eq!(model, "gpt-4o/extra");
     }
 }
