@@ -50,6 +50,11 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 
+[dev-dependencies]
+portable-pty = "0.8"
+testcontainers = "0.23"
+vt100 = "0.15"
+
 [profile.release]
 codegen-units = 1
 lto = true
