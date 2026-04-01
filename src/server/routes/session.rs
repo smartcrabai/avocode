@@ -13,9 +13,21 @@ use super::super::state::{AppState, ServerEvent};
 ///
 /// Returns a [`ServerError`] if the listing fails.
 pub async fn list_sessions(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<Vec<SessionSummary>>, ServerError> {
-    Ok(Json(vec![]))
+    let store = require_store(&state)?;
+    // List all sessions without filtering by project (HTTP API is project-agnostic).
+    let sessions = store
+        .list_all_sessions()
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
+    let summaries = sessions
+        .into_iter()
+        .map(|s| SessionSummary {
+            id: s.id,
+            title: s.title,
+        })
+        .collect();
+    Ok(Json(summaries))
 }
 
 /// POST /session → create session
@@ -24,13 +36,42 @@ pub async fn list_sessions(
 ///
 /// Returns a [`ServerError`] if the session cannot be created.
 pub async fn create_session(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<SessionResponse>, ServerError> {
+    let store = require_store(&state)?;
+
+    let directory = if let Some(d) = req.directory {
+        d
+    } else {
+        std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .map_err(|e| {
+                ServerError::Internal(format!("cannot determine working directory: {e}"))
+            })?
+    };
+
+    // Derive a stable project id from the directory so sessions in the same
+    // project are grouped together.
+    let project_id = crate::app::project_id_for_directory(&directory);
+
+    let mut session = crate::session::Session::new(project_id, directory);
+    session.title.clone_from(&req.title);
+    let session_id = session.id.clone();
+    let time_created = session.time_created;
+
+    store
+        .create_session(&session)
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+    let _ = state.event_tx.send(ServerEvent::SessionCreated {
+        session_id: session_id.clone(),
+    });
+
     Ok(Json(SessionResponse {
-        id: uuid_v4_stub(),
+        id: session_id,
         title: req.title,
-        time_created: now_ms(),
+        time_created,
     }))
 }
 
@@ -41,12 +82,23 @@ pub async fn create_session(
 /// Returns [`ServerError::NotFound`] when the session does not exist.
 pub async fn get_session(
     Path(id): Path<String>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<SessionResponse>, ServerError> {
-    Err(ServerError::NotFound(format!("Session {id} not found")))
+    let store = require_store(&state)?;
+    let session = store
+        .get_session(&id)
+        .map_err(|e| ServerError::Internal(e.to_string()))?
+        .ok_or_else(|| ServerError::NotFound(format!("Session {id} not found")))?;
+    Ok(Json(SessionResponse {
+        id: session.id,
+        title: session.title,
+        time_created: session.time_created,
+    }))
 }
 
 /// POST /session/{id}/message → send message
+///
+/// Runs the processor synchronously and returns the full assistant reply.
 ///
 /// # Errors
 ///
@@ -56,12 +108,61 @@ pub async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
-    let _ = state
-        .event_tx
-        .send(ServerEvent::SessionUpdated { session_id: id });
-    Ok(Json(
-        serde_json::json!({ "ok": true, "message": req.content }),
-    ))
+    let store = require_store(&state)?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    let options = crate::session::processor::ProcessOptions {
+        session_id: id.clone(),
+        user_message: req.content.clone(),
+        model: req.model,
+        agent: "default".to_owned(),
+        max_turns: None,
+    };
+
+    // Spawn the processor so the channel drain runs concurrently.
+    // Without this, a long response (>64 chunks) would fill the channel and deadlock.
+    let store_for_proc = store.clone();
+    let proc_handle = tokio::spawn(async move {
+        crate::session::processor::process(&store_for_proc, options, tx).await
+    });
+
+    let mut assistant_text = String::new();
+    let mut error_message: Option<String> = None;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            crate::session::processor::ProcessEvent::PartUpdated { part, .. } => {
+                if let crate::session::Part::Text(t) = part {
+                    assistant_text.push_str(&t.text);
+                }
+            }
+            crate::session::processor::ProcessEvent::MessageCreated { message } => {
+                let _ = state.event_tx.send(ServerEvent::MessageCreated {
+                    session_id: id.clone(),
+                    message_id: message.id,
+                });
+            }
+            crate::session::processor::ProcessEvent::Done => break,
+            crate::session::processor::ProcessEvent::Error(e) => {
+                error_message = Some(e);
+                break;
+            }
+        }
+    }
+
+    proc_handle
+        .await
+        .map_err(|e| ServerError::Internal(e.to_string()))?
+        .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+    if let Some(err) = error_message {
+        return Err(ServerError::Internal(err));
+    }
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "assistant": assistant_text,
+    })))
 }
 
 /// GET /session/defaults?directory=... → return the last-used `config_ref` for a directory
@@ -73,15 +174,29 @@ pub async fn get_session_defaults(
     State(state): State<AppState>,
     Query(query): Query<SessionDefaultsQuery>,
 ) -> Result<Json<SessionDefaultsResponse>, ServerError> {
-    let store = state
-        .session_store
-        .as_ref()
-        .ok_or_else(|| ServerError::Internal("session store not initialised".to_owned()))?;
+    let store = require_store(&state)?;
     let config_ref = store
         .latest_config_for_directory(&query.directory)
         .map_err(|e| ServerError::Internal(e.to_string()))?;
     Ok(Json(SessionDefaultsResponse { config_ref }))
 }
+
+// ---------------------------------------------------------------------------
+// Helper
+// ---------------------------------------------------------------------------
+
+fn require_store(
+    state: &AppState,
+) -> Result<std::sync::Arc<crate::session::SessionStore>, ServerError> {
+    state
+        .session_store
+        .clone()
+        .ok_or_else(|| ServerError::Internal("session store not initialised".to_owned()))
+}
+
+// ---------------------------------------------------------------------------
+// Request / response types
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 pub struct SessionDefaultsQuery {
@@ -116,22 +231,4 @@ pub struct SessionSummary {
 pub struct SendMessageRequest {
     pub content: String,
     pub model: Option<String>,
-}
-
-fn uuid_v4_stub() -> String {
-    format!(
-        "{:016x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    )
-}
-
-fn now_ms() -> i64 {
-    // Saturate at i64::MAX on overflow — timestamps beyond ~292 million years from now.
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
-        .unwrap_or(0)
 }

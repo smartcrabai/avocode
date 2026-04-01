@@ -6,6 +6,21 @@ use tokio::sync::RwLock;
 use crate::event::bus::EventBus;
 use crate::types::{ProjectId, SessionId};
 
+/// Returns a stable, deterministic 32-char hex project ID derived from a directory path.
+#[must_use]
+pub fn project_id_for_directory(directory: &str) -> String {
+    use sha2::Digest as _;
+    let hash = sha2::Sha256::digest(directory.as_bytes());
+    // Encode only the first 16 bytes (128 bits) to get exactly 32 hex chars,
+    // avoiding allocating the full 64-char string and then truncating it.
+    let mut id = String::with_capacity(32);
+    for byte in &hash[..16] {
+        use std::fmt::Write as _;
+        let _ = write!(id, "{byte:02x}");
+    }
+    id
+}
+
 /// Global application context shared across components
 #[derive(Clone)]
 pub struct AppContext {
@@ -39,7 +54,9 @@ impl AppContext {
             .join("avocode");
         Self {
             inner: Arc::new(AppContextInner {
-                project_id: ProjectId::new(),
+                project_id: ProjectId(project_id_for_directory(
+                    &project_root.display().to_string(),
+                )),
                 project_root,
                 config_dir,
                 data_dir,

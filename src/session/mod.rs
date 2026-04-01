@@ -1,5 +1,6 @@
 pub mod compaction;
 pub mod message;
+pub mod model_parser;
 pub mod processor;
 pub mod schema;
 pub mod store;

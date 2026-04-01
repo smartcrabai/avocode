@@ -36,6 +36,25 @@ pub enum ServerEvent {
     },
 }
 
+impl ServerEvent {
+    /// Return the `PascalCase` variant name, used as the SSE `event:` field.
+    ///
+    /// Keeping this as a separate method preserves the `snake_case` JSON
+    /// serialisation (via `#[serde(rename_all = "snake_case")]`) while still
+    /// letting clients match on `event: MessageCreated` / `event: PartUpdated`.
+    #[must_use]
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Self::SessionCreated { .. } => "SessionCreated",
+            Self::SessionUpdated { .. } => "SessionUpdated",
+            Self::MessageCreated { .. } => "MessageCreated",
+            Self::PartUpdated { .. } => "PartUpdated",
+            Self::PermissionAsked { .. } => "PermissionAsked",
+            Self::PermissionReplied { .. } => "PermissionReplied",
+        }
+    }
+}
+
 /// Shared state passed to all axum handlers
 #[derive(Clone)]
 pub struct AppState {
@@ -69,10 +88,21 @@ impl AppState {
     }
 
     /// Create an `AppState` pre-populated with a session store.
+    #[cfg(test)]
     #[must_use]
     pub fn with_store(store: SessionStore) -> Self {
         Self {
             session_store: Some(Arc::new(store)),
+            ..Self::new()
+        }
+    }
+
+    /// Create an `AppState` with both a session store and a provider catalog.
+    #[must_use]
+    pub fn with_store_and_catalog(store: SessionStore, catalog: Vec<ProviderInfo>) -> Self {
+        Self {
+            session_store: Some(Arc::new(store)),
+            provider_catalog: Arc::new(catalog),
             ..Self::new()
         }
     }
