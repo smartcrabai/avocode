@@ -16,6 +16,14 @@ pub struct Config {
     pub share: Option<String>,
 }
 
+impl Config {
+    /// Returns the set of provider IDs that are explicitly configured.
+    #[must_use]
+    pub fn configured_provider_ids(&self) -> std::collections::HashSet<String> {
+        self.provider.keys().cloned().collect()
+    }
+}
+
 /// Provider-specific configuration including API keys and model overrides.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]

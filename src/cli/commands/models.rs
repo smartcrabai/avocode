@@ -9,7 +9,12 @@ pub struct ModelsArgs {
 ///
 /// Returns `CliError` if the dynamic provider list cannot be loaded.
 pub async fn execute(args: ModelsArgs) -> crate::cli::Result<()> {
+    let config = crate::config::loader::load_global().unwrap_or_default();
     let providers = crate::provider::models_dev::fetch_dynamic_providers().await?;
+    let providers = crate::provider::models_dev::filter_by_configured(
+        providers,
+        &config.configured_provider_ids(),
+    );
     let mut choices = crate::provider::models_dev::to_model_choices(&providers);
 
     if let Some(ref provider_id) = args.provider {
