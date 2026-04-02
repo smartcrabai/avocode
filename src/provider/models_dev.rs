@@ -47,6 +47,24 @@ pub async fn fetch_dynamic_providers() -> Result<Vec<ProviderInfo>, ProviderErro
     Ok(providers)
 }
 
+/// Retains only providers whose IDs are present in `configured_ids`.
+///
+/// If `configured_ids` is empty (no providers explicitly configured), all
+/// providers are returned unchanged so the caller still gets a useful list.
+#[must_use]
+pub fn filter_by_configured<S: std::hash::BuildHasher>(
+    providers: Vec<ProviderInfo>,
+    configured_ids: &std::collections::HashSet<String, S>,
+) -> Vec<ProviderInfo> {
+    if configured_ids.is_empty() {
+        return providers;
+    }
+    providers
+        .into_iter()
+        .filter(|p| configured_ids.contains(&p.id))
+        .collect()
+}
+
 /// Convert a provider list into a deterministically sorted, flat `ModelChoice` list.
 /// Sort order: `provider_id` ascending, then `model_id` ascending.
 #[must_use]
@@ -336,6 +354,42 @@ mod tests {
             env: vec![],
             models,
         }
+    }
+
+    // ---- filter_by_configured tests ----
+
+    #[test]
+    fn test_filter_by_configured_empty_ids_returns_all() {
+        let providers = vec![
+            make_provider("openai", &["gpt-4o"]),
+            make_provider("anthropic", &["claude-sonnet-4-5"]),
+        ];
+        let configured: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let result = filter_by_configured(providers, &configured);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_by_configured_keeps_only_matching() {
+        let providers = vec![
+            make_provider("openai", &["gpt-4o"]),
+            make_provider("anthropic", &["claude-sonnet-4-5"]),
+            make_provider("google", &["gemini-2.0-flash"]),
+        ];
+        let configured: std::collections::HashSet<String> =
+            ["openai".to_string()].into_iter().collect();
+        let result = filter_by_configured(providers, &configured);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "openai");
+    }
+
+    #[test]
+    fn test_filter_by_configured_no_match_returns_empty() {
+        let providers = vec![make_provider("openai", &["gpt-4o"])];
+        let configured: std::collections::HashSet<String> =
+            ["anthropic".to_string()].into_iter().collect();
+        let result = filter_by_configured(providers, &configured);
+        assert!(result.is_empty());
     }
 
     #[test]

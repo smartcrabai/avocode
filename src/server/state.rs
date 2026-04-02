@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+use crate::permission::PermissionManager;
 use crate::provider::ProviderInfo;
 use crate::session::store::SessionStore;
 
@@ -64,6 +65,8 @@ pub struct AppState {
     /// Session store used by handlers that need to read/write sessions.
     /// `None` when the server is started without a store (e.g. tests that only need routing).
     pub session_store: Option<Arc<SessionStore>>,
+    /// Permission manager for handling runtime permission checks and approvals.
+    pub permission_manager: Arc<PermissionManager>,
 }
 
 impl AppState {
@@ -74,6 +77,7 @@ impl AppState {
             event_tx,
             provider_catalog: Arc::new(vec![]),
             session_store: None,
+            permission_manager: Arc::new(PermissionManager::new()),
         }
     }
 
