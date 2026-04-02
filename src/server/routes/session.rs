@@ -232,3 +232,99 @@ pub struct SendMessageRequest {
     pub content: String,
     pub model: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::create_router;
+    use crate::session::Session;
+    use crate::session::SessionStore;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt as _;
+
+    #[tokio::test]
+    async fn create_session_persists_to_store() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let store_clone = store.clone();
+        let state = AppState::with_store(store);
+        let app = create_router(state);
+
+        let body = serde_json::json!({
+            "title": "Test Session",
+            "directory": "/tmp/test-project"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/session")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body)?))?,
+            )
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let resp_body: serde_json::Value =
+            serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 1024).await?)?;
+        let session_id = resp_body["id"].as_str().ok_or("missing id in response")?;
+        assert!(!session_id.is_empty(), "session id should not be empty");
+
+        let sessions = store_clone.list_all_sessions()?;
+        assert_eq!(sessions.len(), 1, "expected exactly one session in store");
+        assert_eq!(sessions[0].id, session_id);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_message_returns_error_for_unknown_session()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let state = AppState::with_store(store);
+        let app = create_router(state);
+
+        let body = serde_json::json!({
+            "content": "Hello"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/session/nonexistent-id/message")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(serde_json::to_string(&body)?))?,
+            )
+            .await?;
+
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "unexpected status for unknown session"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_sessions_returns_stored_sessions() -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let s1 = Session::new("proj-1".to_owned(), "/dir1".to_owned());
+        store.create_session(&s1)?;
+
+        let state = AppState::with_store(store);
+        let app = create_router(state);
+
+        let response = app
+            .oneshot(Request::builder().uri("/session").body(Body::empty())?)
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 4096).await?)?;
+        let sessions = body.as_array().ok_or("expected array")?;
+        assert!(!sessions.is_empty(), "expected at least one session");
+
+        Ok(())
+    }
+}

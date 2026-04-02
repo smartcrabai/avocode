@@ -1,24 +1,6 @@
-pub mod agent;
-pub mod app;
-pub mod auth;
-pub mod cli;
-pub mod config;
-pub mod error;
-pub mod event;
-pub mod llm;
-pub mod mcp;
-pub mod permission;
-pub mod provider;
-pub mod server;
-pub mod session;
-pub mod storage;
-pub mod tool;
-pub mod tui;
-pub mod types;
-
 #[tokio::main]
 async fn main() {
-    if let Err(e) = cli::run().await {
+    if let Err(e) = avocode::cli::run().await {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }

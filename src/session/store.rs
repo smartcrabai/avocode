@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use super::{message::Message, schema::Session};
 
+#[derive(Clone)]
 pub struct SessionStore {
     conn: Arc<Mutex<Connection>>,
 }

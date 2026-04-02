@@ -54,7 +54,6 @@ uuid = { version = "1", features = ["v4", "v7"] }
 portable-pty = "0.8"
 testcontainers = "0.23"
 vt100 = "0.15"
-
 [profile.release]
 codegen-units = 1
 lto = true
