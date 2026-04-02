@@ -17,7 +17,7 @@ pub struct RunArgs {
 /// Returns `CliError` if the command fails.
 pub async fn execute(args: RunArgs) -> crate::cli::Result<()> {
     if !args.no_tui {
-        crate::tui::run().await?;
+        crate::tui::run(args.model).await?;
         return Ok(());
     }
 
@@ -39,7 +39,9 @@ pub async fn execute(args: RunArgs) -> crate::cli::Result<()> {
     let options = crate::session::processor::ProcessOptions {
         session_id: session.id,
         // clap `requires = "message"` guarantees this is Some when --no-tui is set
-        user_message: args.message.unwrap_or_default(),
+        user_message: args
+            .message
+            .expect("clap `requires = \"message\"` guarantees this is Some"),
         model: args.model,
         agent: "default".to_owned(),
         max_turns: None,

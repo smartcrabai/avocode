@@ -1,8 +1,8 @@
-use crate::tui::theme::Theme;
+use crate::tui::styles::Styles;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
@@ -11,7 +11,6 @@ use ratatui::{
 pub struct ChatMessage {
     pub role: MessageRole,
     pub content: String,
-    pub timestamp: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,12 +52,12 @@ impl ChatState {
     }
 
     pub fn scroll_down(&mut self) {
-        self.scroll_offset += 3;
+        self.scroll_offset = self.scroll_offset.saturating_add(3);
     }
 }
 
 pub struct ChatWidget<'a> {
-    pub theme: &'a Theme,
+    pub styles: &'a Styles,
 }
 
 impl StatefulWidget for ChatWidget<'_> {
@@ -72,8 +71,12 @@ impl StatefulWidget for ChatWidget<'_> {
         let block = Block::default()
             .borders(Borders::ALL)
             .title("Chat")
-            .border_style(self.theme.border_style())
-            .title_style(self.theme.title_style());
+            .border_style(Style::default().fg(self.styles.muted))
+            .title_style(
+                Style::default()
+                    .fg(self.styles.accent)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         let inner = block.inner(area);
         block.render(area, buf);
@@ -81,22 +84,22 @@ impl StatefulWidget for ChatWidget<'_> {
         let mut lines: Vec<Line> = Vec::new();
         for msg in &state.messages {
             let (color, prefix) = match msg.role {
-                MessageRole::User => (self.theme.user_msg, "You"),
-                MessageRole::Assistant => (self.theme.assistant_msg, "Assistant"),
-                MessageRole::System => (self.theme.muted, "System"),
-                MessageRole::Tool => (self.theme.accent, "Tool"),
+                MessageRole::User => (self.styles.foreground, "You"),
+                MessageRole::Assistant => (self.styles.accent, "Assistant"),
+                MessageRole::System => (self.styles.muted, "System"),
+                MessageRole::Tool => (self.styles.muted, "Tool"),
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("{prefix}: "), Style::default().fg(color)),
-                Span::raw(msg.content.clone()),
+                Span::raw(msg.content.as_str()),
             ]));
             lines.push(Line::from(""));
         }
         if let Some(streaming) = &state.streaming {
             lines.push(Line::from(vec![
-                Span::styled("Assistant: ", Style::default().fg(self.theme.assistant_msg)),
-                Span::raw(streaming.clone()),
-                Span::styled("|", Style::default().fg(self.theme.accent)),
+                Span::styled("Assistant: ", Style::default().fg(self.styles.accent)),
+                Span::raw(streaming.as_str()),
+                Span::styled("|", Style::default().fg(self.styles.accent)),
             ]));
         }
 

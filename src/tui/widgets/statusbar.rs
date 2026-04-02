@@ -1,4 +1,4 @@
-use crate::tui::theme::Theme;
+use crate::tui::styles::Styles;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 pub struct StatusBar<'a> {
-    pub theme: &'a Theme,
+    pub styles: &'a Styles,
     pub model: &'a str,
     pub mode: &'a str,
     pub keys_hint: &'a str,
@@ -20,14 +20,14 @@ impl Widget for StatusBar<'_> {
             Span::styled(
                 format!(" {} ", self.mode),
                 Style::default()
-                    .fg(self.theme.primary)
+                    .fg(self.styles.accent)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(format!("| {} ", self.model)),
         ]);
         let right = Line::from(vec![Span::styled(
             self.keys_hint,
-            Style::default().fg(self.theme.muted),
+            Style::default().fg(self.styles.muted),
         )]);
 
         Paragraph::new(left).render(area, buf);
