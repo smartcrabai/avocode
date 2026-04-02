@@ -1,4 +1,4 @@
-use crate::tui::theme::Theme;
+use crate::tui::styles::Styles;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -51,7 +51,7 @@ impl InputState {
 }
 
 pub struct InputWidget<'a> {
-    pub theme: &'a Theme,
+    pub styles: &'a Styles,
 }
 
 impl StatefulWidget for InputWidget<'_> {
@@ -63,15 +63,15 @@ impl StatefulWidget for InputWidget<'_> {
         } else {
             "Input"
         };
-        let border_style = if state.focused {
-            Style::default().fg(self.theme.primary)
+        let border_color = if state.focused {
+            self.styles.accent
         } else {
-            self.theme.border_style()
+            self.styles.muted
         };
         let block = Block::default()
             .borders(Borders::ALL)
             .title(title)
-            .border_style(border_style);
+            .border_style(Style::default().fg(border_color));
         let inner = block.inner(area);
         block.render(area, buf);
         Paragraph::new(state.text.as_str()).render(inner, buf);

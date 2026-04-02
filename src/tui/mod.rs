@@ -1,25 +1,19 @@
 pub mod app;
 pub mod events;
-pub mod keybinds;
-pub mod theme;
+pub mod styles;
+pub mod terminal_guard;
 pub mod widgets;
 
 use std::io;
 use std::sync::Arc;
 
 use app::App;
-use crossterm::{
-    event::{self, Event},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crossterm::event::{self, Event};
 use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     prelude::{StatefulWidget, Widget},
 };
-use widgets::{chat::ChatWidget, input::InputWidget, sidebar::SidebarWidget, statusbar::StatusBar};
+use widgets::{chat::ChatWidget, input::InputWidget, statusbar::StatusBar};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TuiError {
@@ -35,11 +29,14 @@ pub type Result<T> = std::result::Result<T, TuiError>;
 
 /// Run the TUI application.
 ///
+/// `initial_model` is an optional `"provider_id/model_id"` string that
+/// overrides the config default for the first session.
+///
 /// # Errors
 ///
 /// Returns an error if the terminal cannot be initialized or an IO error occurs.
 #[expect(clippy::too_many_lines)]
-pub async fn run() -> Result<()> {
+pub async fn run(initial_model: Option<String>) -> Result<()> {
     // Open session store and create a session for the current working directory.
     let ctx = crate::app::AppContext::new(std::env::current_dir()?);
     let store = Arc::new(ctx.open_session_store()?);
@@ -60,13 +57,13 @@ pub async fn run() -> Result<()> {
     );
     store.create_session(&session)?;
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    // Use RAII guard so terminal is always restored on drop (panic or normal exit).
+    let mut guard = terminal_guard::TerminalGuard::init()?;
+    let terminal = guard.terminal_mut();
 
-    let mut app = App::with_models(choices, config.model);
+    // Merge config model with CLI override: CLI wins when both are present.
+    let effective_model = initial_model.or(config.model);
+    let mut app = App::with_models(choices, effective_model);
 
     // Unbounded channel for events coming from background processor tasks.
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<events::AppEvent>();
@@ -84,7 +81,6 @@ pub async fn run() -> Result<()> {
                         app.chat.push(widgets::chat::ChatMessage {
                             role: widgets::chat::MessageRole::Assistant,
                             content: text,
-                            timestamp: String::new(),
                         });
                     }
                 }
@@ -96,68 +92,39 @@ pub async fn run() -> Result<()> {
                         app.chat.push(widgets::chat::ChatMessage {
                             role: widgets::chat::MessageRole::Assistant,
                             content: text,
-                            timestamp: String::new(),
                         });
                     }
                     app.chat.push(widgets::chat::ChatMessage {
                         role: widgets::chat::MessageRole::System,
                         content: format!("[Error: {e}]"),
-                        timestamp: String::new(),
                     });
                 }
             }
         }
 
+        let styles = &app.styles;
         terminal.draw(|frame| {
             let area = frame.area();
-            let chunks = if app.show_sidebar {
-                Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Length(30), Constraint::Min(0)])
-                    .split(area)
-            } else {
-                Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Min(0)])
-                    .split(area)
-            };
 
-            let main_idx = usize::from(app.show_sidebar);
-
-            if app.show_sidebar {
-                SidebarWidget { theme: &app.theme }.render(
-                    chunks[0],
-                    frame.buffer_mut(),
-                    &mut app.sidebar,
-                );
-            }
-
-            let main_chunks = Layout::default()
+            // Simplified layout: chat | input | statusbar (no sidebar).
+            let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Min(0),
                     Constraint::Length(5),
                     Constraint::Length(1),
                 ])
-                .split(chunks[main_idx]);
+                .split(area);
 
-            ChatWidget { theme: &app.theme }.render(
-                main_chunks[0],
-                frame.buffer_mut(),
-                &mut app.chat,
-            );
-            InputWidget { theme: &app.theme }.render(
-                main_chunks[1],
-                frame.buffer_mut(),
-                &mut app.input,
-            );
+            ChatWidget { styles }.render(chunks[0], frame.buffer_mut(), &mut app.chat);
+            InputWidget { styles }.render(chunks[1], frame.buffer_mut(), &mut app.input);
             StatusBar {
-                theme: &app.theme,
+                styles,
                 model: app.selected_model.as_deref().unwrap_or("(no model)"),
                 mode: "INSERT",
-                keys_hint: "^C quit | ^B sidebar | ^T theme | ^P model",
+                keys_hint: "^C quit",
             }
-            .render(main_chunks[2], frame.buffer_mut());
+            .render(chunks[2], frame.buffer_mut());
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))?
@@ -222,31 +189,12 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    guard.restore()?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tui::{app::App, theme};
-
-    #[test]
-    fn test_app_creation() {
-        let app = App::new();
-        assert!(!app.should_quit);
-        assert!(app.show_sidebar);
-    }
-
-    #[test]
-    fn test_theme_cycling() {
-        let mut app = App::new();
-        let initial_name = app.theme.name;
-        app.cycle_theme();
-        let all = theme::all_themes();
-        assert!(all.len() > 1 || app.theme.name == initial_name);
-    }
-
     #[test]
     fn test_input_state() {
         use crate::tui::widgets::input::InputState;

@@ -58,12 +58,8 @@ avocode
 | Key | Action |
 |-----|--------|
 | `Enter` | Send message |
-| `Ctrl+B` | Toggle sidebar |
-| `Ctrl+T` | Cycle theme |
 | `PageUp / PageDown` | Scroll chat |
 | `Ctrl+C` | Quit |
-
-Themes: Catppuccin Mocha | Dracula | Nord | Gruvbox | Tokyo Night
 
 ### Non-interactive mode
 
@@ -154,7 +150,7 @@ src/
 ├── app.rs           AppContext — Arc-shared runtime state
 │
 ├── cli/             clap subcommands
-├── tui/             ratatui TUI (5 themes, chat/input/sidebar)
+├── tui/             ratatui TUI (chat/input/statusbar)
 ├── server/          axum REST API + SSE event stream
 │
 ├── llm/             Streaming LLM clients

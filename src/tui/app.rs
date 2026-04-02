@@ -1,29 +1,25 @@
 use crate::provider::models_dev::ModelChoice;
 use crate::tui::{
-    keybinds::KeyBindings,
-    theme::{self, Theme},
+    styles::Styles,
     widgets::{
         chat::{ChatMessage, ChatState, MessageRole},
         input::InputState,
-        sidebar::SidebarState,
     },
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+/// Simplified TUI state.
+///
+/// Only holds the minimum data needed for a single chat session:
+/// chat history, text input, model list, and quit flag.
 pub struct App {
     pub chat: ChatState,
     pub input: InputState,
-    pub sidebar: SidebarState,
-    pub theme: Theme,
-    pub keybinds: KeyBindings,
-    pub show_sidebar: bool,
+    pub styles: Styles,
     pub should_quit: bool,
-    pub theme_index: usize,
     pub models: Vec<ModelChoice>,
     /// `"provider_id/model_id"` form.
     pub selected_model: Option<String>,
-    pub picker_open: bool,
-    pub picker_cursor: usize,
     /// Set by `submit_message`, consumed and cleared by the TUI run loop.
     pub pending_submit: Option<String>,
 }
@@ -40,16 +36,10 @@ impl App {
         Self {
             chat: ChatState::new(),
             input: InputState::new(),
-            sidebar: SidebarState::new(),
-            theme: theme::default_theme(),
-            keybinds: KeyBindings::default(),
-            show_sidebar: true,
+            styles: Styles::new(),
             should_quit: false,
-            theme_index: 0,
             models: vec![],
             selected_model: None,
-            picker_open: false,
-            picker_cursor: 0,
             pending_submit: None,
         }
     }
@@ -72,66 +62,26 @@ impl App {
         app
     }
 
+    /// Handle a terminal key event.
+    ///
+    /// Recognised keys:
+    /// - **Ctrl+C**  – quit
+    /// - **Enter**   – submit current input
+    /// - **Backspace** – delete last char
+    /// - **Char(c)** – insert character
+    /// - **`PageUp` / `PageDown`** – scroll chat
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if self.picker_open {
-            match (key.code, key.modifiers) {
-                (KeyCode::Down, _) => {
-                    if !self.models.is_empty() {
-                        self.picker_cursor = (self.picker_cursor + 1) % self.models.len();
-                    }
-                }
-                (KeyCode::Up, _) => {
-                    if !self.models.is_empty() {
-                        self.picker_cursor = if self.picker_cursor == 0 {
-                            self.models.len() - 1
-                        } else {
-                            self.picker_cursor - 1
-                        };
-                    }
-                }
-                (KeyCode::Enter, KeyModifiers::NONE) => {
-                    if let Some(choice) = self.models.get(self.picker_cursor) {
-                        self.selected_model = Some(choice.qualified_id());
-                    }
-                    self.picker_open = false;
-                }
-                (KeyCode::Esc, _) => {
-                    self.picker_open = false;
-                }
-                _ => {}
-            }
-            return;
-        }
-
         match (key.code, key.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => self.should_quit = true,
-            (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-                self.show_sidebar = !self.show_sidebar;
-            }
-            (KeyCode::Char('t'), KeyModifiers::CONTROL) => self.cycle_theme(),
-            (KeyCode::Char('p'), KeyModifiers::CONTROL) => self.open_model_picker(),
             (KeyCode::Enter, KeyModifiers::NONE) if self.input.focused => self.submit_message(),
             (KeyCode::Backspace, KeyModifiers::NONE) => self.input.delete_char(),
-            (KeyCode::Char(c), KeyModifiers::NONE) => self.input.insert_char(c),
-            (KeyCode::PageUp, _) => self.chat.scroll_up(),
-            (KeyCode::PageDown, _) => self.chat.scroll_down(),
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.input.insert_char(c);
+            }
+            (KeyCode::PageUp, KeyModifiers::NONE) => self.chat.scroll_up(),
+            (KeyCode::PageDown, KeyModifiers::NONE) => self.chat.scroll_down(),
             _ => {}
         }
-    }
-
-    fn open_model_picker(&mut self) {
-        if self.models.is_empty() {
-            return;
-        }
-        if let Some(ref selected) = self.selected_model
-            && let Some(idx) = self
-                .models
-                .iter()
-                .position(|m| m.qualified_id() == *selected)
-        {
-            self.picker_cursor = idx;
-        }
-        self.picker_open = true;
     }
 
     fn submit_message(&mut self) {
@@ -140,7 +90,6 @@ impl App {
             self.chat.push(ChatMessage {
                 role: MessageRole::User,
                 content: text.clone(),
-                timestamp: String::new(),
             });
             self.pending_submit = Some(text);
         }
@@ -149,12 +98,6 @@ impl App {
     /// Drain and return the pending submit text, if any.
     pub fn take_pending_submit(&mut self) -> Option<String> {
         self.pending_submit.take()
-    }
-
-    pub fn cycle_theme(&mut self) {
-        let themes = theme::all_themes();
-        self.theme_index = (self.theme_index + 1) % themes.len();
-        self.theme = themes[self.theme_index].clone();
     }
 }
 
@@ -179,15 +122,46 @@ mod tests {
         ]
     }
 
-    // ---- App::with_models initial state ----
+    // ================================================================
+    // App::new — default state
+    // ================================================================
 
     #[test]
-    fn test_with_models_picker_closed_and_cursor_at_zero() {
-        let app = App::with_models(two_models(), None);
-        assert!(!app.picker_open);
-        assert_eq!(app.picker_cursor, 0);
-        assert_eq!(app.models.len(), 2);
+    fn test_new_app_not_quit() {
+        let app = App::new();
+        assert!(!app.should_quit);
     }
+
+    #[test]
+    fn test_new_app_has_no_selected_model() {
+        let app = App::new();
+        assert!(app.selected_model.is_none());
+    }
+
+    #[test]
+    fn test_new_app_has_empty_models() {
+        let app = App::new();
+        assert!(app.models.is_empty());
+    }
+
+    #[test]
+    fn test_new_app_has_empty_pending_submit() {
+        let app = App::new();
+        assert!(app.pending_submit.is_none());
+    }
+
+    #[test]
+    fn test_new_app_has_default_styles() {
+        let app = App::new();
+        let default = Styles::new();
+        assert_eq!(app.styles.foreground, default.foreground);
+        assert_eq!(app.styles.accent, default.accent);
+        assert_eq!(app.styles.muted, default.muted);
+    }
+
+    // ================================================================
+    // App::with_models — model selection policy
+    // ================================================================
 
     #[test]
     fn test_with_models_config_model_in_list_is_selected() {
@@ -219,98 +193,128 @@ mod tests {
         assert!(app.selected_model.is_none());
     }
 
-    // ---- Ctrl+P opens picker ----
+    #[test]
+    fn test_with_models_stores_model_list() {
+        let app = App::with_models(two_models(), None);
+        assert_eq!(app.models.len(), 2);
+    }
+
+    // ================================================================
+    // Key handling — quit
+    // ================================================================
 
     #[test]
-    fn test_ctrl_p_opens_model_picker() {
-        let mut app = App::with_models(two_models(), None);
-        assert!(!app.picker_open);
-        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-        assert!(app.picker_open);
+    fn test_ctrl_c_sets_should_quit() {
+        let mut app = App::new();
+        assert!(!app.should_quit);
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.should_quit);
+    }
+
+    // ================================================================
+    // Key handling — text input
+    // ================================================================
+
+    #[test]
+    fn test_char_inserts_into_input() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert_eq!(app.input.text, "a");
     }
 
     #[test]
-    fn test_ctrl_p_no_op_when_models_empty() {
-        let mut app = App::with_models(vec![], None);
-        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-        assert!(!app.picker_open);
+    fn test_multiple_chars_accumulate() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+        assert_eq!(app.input.text, "hi");
     }
 
     #[test]
-    fn test_ctrl_p_positions_cursor_on_current_selection() {
-        let mut app = App::with_models(two_models(), Some("openai/gpt-4o".to_string()));
-        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-        assert_eq!(app.picker_cursor, 1);
+    fn test_backspace_deletes_last_char() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert!(app.input.text.is_empty());
     }
 
-    // ---- Picker navigation ----
+    // ================================================================
+    // Key handling — message submission
+    // ================================================================
 
     #[test]
-    fn test_picker_down_advances_cursor() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.picker_cursor = 0;
-        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-        assert_eq!(app.picker_cursor, 1);
-    }
-
-    #[test]
-    fn test_picker_down_wraps_at_end() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.picker_cursor = 1; // last index for two_models
-        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-        assert_eq!(app.picker_cursor, 0);
-    }
-
-    #[test]
-    fn test_picker_up_decrements_cursor() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.picker_cursor = 1;
-        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        assert_eq!(app.picker_cursor, 0);
-    }
-
-    #[test]
-    fn test_picker_up_wraps_at_start() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.picker_cursor = 0;
-        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        assert_eq!(app.picker_cursor, 1); // wraps to last index
-    }
-
-    // ---- Picker confirmation ----
-
-    #[test]
-    fn test_picker_enter_confirms_selection_and_closes_picker() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.picker_cursor = 1;
+    fn test_enter_submits_message_and_creates_chat_entry() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.selected_model.as_deref(), Some("openai/gpt-4o"));
-        assert!(!app.picker_open);
+
+        assert_eq!(app.chat.messages.len(), 1);
+        assert_eq!(app.chat.messages[0].role, MessageRole::User);
+        assert_eq!(app.chat.messages[0].content, "hi");
     }
 
     #[test]
-    fn test_picker_esc_closes_without_changing_selection() {
-        let mut app = App::with_models(two_models(), None);
-        let original = app.selected_model.clone();
-        app.picker_open = true;
-        app.picker_cursor = 1; // moved but not confirmed
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        assert!(!app.picker_open);
-        assert_eq!(app.selected_model, original);
+    fn test_enter_sets_pending_submit() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(app.pending_submit, Some("x".to_string()));
     }
 
-    // ---- Picker does not leak keys to normal handler ----
+    #[test]
+    fn test_enter_on_empty_input_is_noop() {
+        let mut app = App::new();
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.chat.messages.is_empty());
+        assert!(app.pending_submit.is_none());
+    }
+
+    // ================================================================
+    // Key handling — chat scrolling
+    // ================================================================
 
     #[test]
-    fn test_picker_open_blocks_normal_key_handling() {
-        let mut app = App::with_models(two_models(), None);
-        app.picker_open = true;
-        app.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
-        assert!(app.show_sidebar); // default is true, should remain true
+    fn test_page_up_scrolls_chat() {
+        let mut app = App::new();
+        app.chat.scroll_offset = 10;
+        app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+        assert!(app.chat.scroll_offset < 10);
+    }
+
+    #[test]
+    fn test_page_down_scrolls_chat() {
+        let mut app = App::new();
+        let before = app.chat.scroll_offset;
+        app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+        assert!(app.chat.scroll_offset > before);
+    }
+
+    // ================================================================
+    // take_pending_submit
+    // ================================================================
+
+    #[test]
+    fn test_take_pending_submit_drains_value() {
+        let mut app = App::new();
+        app.pending_submit = Some("hello".to_string());
+        let taken = app.take_pending_submit();
+        assert_eq!(taken, Some("hello".to_string()));
+        assert!(app.pending_submit.is_none());
+    }
+
+    #[test]
+    fn test_take_pending_submit_returns_none_when_empty() {
+        let mut app = App::new();
+        assert!(app.take_pending_submit().is_none());
+    }
+
+    #[test]
+    fn test_take_pending_submit_twice_returns_none_second_time() {
+        let mut app = App::new();
+        app.pending_submit = Some("once".to_string());
+        let _ = app.take_pending_submit();
+        assert!(app.take_pending_submit().is_none());
     }
 }
