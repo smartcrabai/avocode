@@ -40,15 +40,19 @@ pub type Result<T> = std::result::Result<T, TuiError>;
 /// Returns an error if the terminal cannot be initialized or an IO error occurs.
 #[expect(clippy::too_many_lines)]
 pub async fn run() -> Result<()> {
-    // Load providers before entering raw mode so failures produce clean error output.
-    let providers = crate::provider::models_dev::fetch_dynamic_providers().await?;
-    let choices = crate::provider::models_dev::to_model_choices(&providers);
-
     // Open session store and create a session for the current working directory.
     let ctx = crate::app::AppContext::new(std::env::current_dir()?);
     let store = Arc::new(ctx.open_session_store()?);
 
     let config = crate::config::loader::load(ctx.project_root()).unwrap_or_default();
+
+    // Load providers before entering raw mode so failures produce clean error output.
+    let providers = crate::provider::models_dev::fetch_dynamic_providers().await?;
+    let providers = crate::provider::models_dev::filter_by_configured(
+        providers,
+        &config.configured_provider_ids(),
+    );
+    let choices = crate::provider::models_dev::to_model_choices(&providers);
 
     let session = crate::session::Session::new(
         ctx.project_id().to_string(),
