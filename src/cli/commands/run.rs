@@ -39,9 +39,9 @@ pub async fn execute(args: RunArgs) -> crate::cli::Result<()> {
     let options = crate::session::processor::ProcessOptions {
         session_id: session.id,
         // clap `requires = "message"` guarantees this is Some when --no-tui is set
-        user_message: args
-            .message
-            .expect("clap `requires = \"message\"` guarantees this is Some"),
+        user_message: args.message.ok_or_else(|| {
+            crate::cli::CliError::CommandFailed("--message is required with --no-tui".to_string())
+        })?,
         model: args.model,
         agent: "default".to_owned(),
         max_turns: None,

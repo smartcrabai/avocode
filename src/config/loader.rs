@@ -190,17 +190,17 @@ pub fn load(directory: &Path) -> Result<Config, ConfigError> {
     let mut config = Config::default();
 
     // 1. System config.
-    if let Some(sys_dir) = paths::system_config_dir() {
-        if let Some(path) = paths::config_file_in_dir(&sys_dir) {
-            config = merge(config, load_file(&path)?);
-        }
+    if let Some(sys_dir) = paths::system_config_dir()
+        && let Some(path) = paths::config_file_in_dir(&sys_dir)
+    {
+        config = merge(config, load_file(&path)?);
     }
 
     // 2. Global user config.
-    if let Some(global_dir) = paths::global_config_dir() {
-        if let Some(path) = paths::config_file_in_dir(&global_dir) {
-            config = merge(config, load_file(&path)?);
-        }
+    if let Some(global_dir) = paths::global_config_dir()
+        && let Some(path) = paths::config_file_in_dir(&global_dir)
+    {
+        config = merge(config, load_file(&path)?);
     }
 
     // 3. Project configs (outermost → innermost).

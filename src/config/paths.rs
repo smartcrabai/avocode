@@ -3,18 +3,15 @@ use std::path::{Path, PathBuf};
 /// Returns the opencode config file in `dir`, preferring `.jsonc` over `.json`.
 /// Returns `None` when neither exists.
 pub(crate) fn config_file_in_dir(dir: &Path) -> Option<PathBuf> {
-    for candidate in [dir.join("opencode.jsonc"), dir.join("opencode.json")] {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+    [dir.join("opencode.jsonc"), dir.join("opencode.json")]
+        .into_iter()
+        .find(|candidate| candidate.exists())
 }
 
 /// Returns the global user-level config directory for opencode.
 ///
 /// opencode follows the XDG convention on all platforms:
-/// - Linux/macOS: `~/.config/opencode` (XDG_CONFIG_HOME or `~/.config`)
+/// - Linux/macOS: `~/.config/opencode` (`XDG_CONFIG_HOME` or `~/.config`)
 /// - Windows: `%APPDATA%\opencode`
 #[must_use]
 pub fn global_config_dir() -> Option<PathBuf> {
