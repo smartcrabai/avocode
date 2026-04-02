@@ -23,11 +23,22 @@ pub struct PermissionRequest {
     pub always_patterns: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PermissionReply {
     Once,
     Always,
     Deny,
+}
+
+impl std::fmt::Display for PermissionReply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PermissionReply::Once => f.write_str("once"),
+            PermissionReply::Always => f.write_str("always"),
+            PermissionReply::Deny => f.write_str("deny"),
+        }
+    }
 }
 
 /// Default permission rulesets for built-in agents.
