@@ -33,8 +33,7 @@ pub async fn fetch_dynamic_providers() -> Result<Vec<ProviderInfo>, ProviderErro
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+        .build()?;
     let resp = client
         .get("https://models.dev/api.json")
         .send()

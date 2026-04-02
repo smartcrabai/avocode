@@ -39,7 +39,7 @@ async fn http_send_message_returns_assistant_echo()
     let session_id = session.id.clone();
     store.create_session(&session)?;
 
-    let state = AppState::with_store(store);
+    let state = AppState::with_store_and_catalog(store, vec![]);
     let app = create_router(state);
 
     // When: send a message
@@ -97,7 +97,7 @@ async fn http_send_message_broadcasts_streaming_events()
     let session_id = session.id.clone();
     store.create_session(&session)?;
 
-    let state = AppState::with_store(store);
+    let state = AppState::with_store_and_catalog(store, vec![]);
     let mut event_rx = state.subscribe();
     let app = create_router(state);
 
@@ -137,7 +137,7 @@ async fn http_create_session_with_directory() -> Result<(), Box<dyn std::error::
     let project_dir = tempfile::tempdir()?;
 
     let store = SessionStore::open_in_memory()?;
-    let state = AppState::with_store(store);
+    let state = AppState::with_store_and_catalog(store, vec![]);
     let app = create_router(state);
 
     let body = serde_json::json!({

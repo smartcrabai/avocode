@@ -8,9 +8,10 @@ pub fn sse_handler(
 ) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let stream = BroadcastStream::new(rx).filter_map(|msg| {
         msg.ok().and_then(|event| {
+            let variant = event.variant_name();
             serde_json::to_string(&event)
                 .ok()
-                .map(|data| Ok(Event::default().data(data)))
+                .map(|data| Ok(Event::default().event(variant).data(data)))
         })
     });
 

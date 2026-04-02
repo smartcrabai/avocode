@@ -63,7 +63,7 @@ avocode
 | `PageUp / PageDown` | Scroll chat |
 | `Ctrl+C` | Quit |
 
-Themes: Catppuccin Mocha · Dracula · Nord · Gruvbox · Tokyo Night
+Themes: Catppuccin Mocha | Dracula | Nord | Gruvbox | Tokyo Night
 
 ### Non-interactive mode
 
@@ -112,7 +112,7 @@ Uses your ChatGPT Codex subscription. Choose between a headless device code flow
 
 Config files use JSON with Comments (JSONC). Three layers are merged in order:
 
-1. System: `/etc/opencode/opencode.jsonc` (Linux) · `/Library/Application Support/opencode/opencode.jsonc` (macOS)
+1. System: `/etc/opencode/opencode.jsonc` (Linux) | `/Library/Application Support/opencode/opencode.jsonc` (macOS)
 2. User: `~/.config/opencode/opencode.jsonc`
 3. Project: `opencode.jsonc` or `.opencode/opencode.jsonc` (walks up to git root)
 

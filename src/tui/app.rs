@@ -19,14 +19,13 @@ pub struct App {
     pub show_sidebar: bool,
     pub should_quit: bool,
     pub theme_index: usize,
-    /// Dynamically loaded model list (sorted, flat).
     pub models: Vec<ModelChoice>,
-    /// Currently selected model in `"provider_id/model_id"` form.
+    /// `"provider_id/model_id"` form.
     pub selected_model: Option<String>,
-    /// Whether the model picker overlay is open.
     pub picker_open: bool,
-    /// Cursor position inside the model picker list.
     pub picker_cursor: usize,
+    /// Set by `submit_message`, consumed and cleared by the TUI run loop.
+    pub pending_submit: Option<String>,
 }
 
 impl Default for App {
@@ -51,6 +50,7 @@ impl App {
             selected_model: None,
             picker_open: false,
             picker_cursor: 0,
+            pending_submit: None,
         }
     }
 
@@ -139,23 +139,22 @@ impl App {
         if !text.is_empty() {
             self.chat.push(ChatMessage {
                 role: MessageRole::User,
-                content: text,
+                content: text.clone(),
                 timestamp: String::new(),
             });
+            self.pending_submit = Some(text);
         }
     }
 
+    /// Drain and return the pending submit text, if any.
+    pub fn take_pending_submit(&mut self) -> Option<String> {
+        self.pending_submit.take()
+    }
+
     pub fn cycle_theme(&mut self) {
-        const THEME_COUNT: usize = 5;
-        self.theme_index = (self.theme_index + 1) % THEME_COUNT;
-        let constructors: [fn() -> Theme; THEME_COUNT] = [
-            theme::default_theme,
-            theme::dracula_theme,
-            theme::nord_theme,
-            theme::gruvbox_theme,
-            theme::tokyo_night_theme,
-        ];
-        self.theme = constructors[self.theme_index]();
+        let themes = theme::all_themes();
+        self.theme_index = (self.theme_index + 1) % themes.len();
+        self.theme = themes[self.theme_index].clone();
     }
 }
 

@@ -54,7 +54,14 @@ pub async fn serve(host: &str, port: u16) -> Result<(), ServerError> {
     std::fs::create_dir_all(&data_dir).map_err(|e| ServerError::Internal(e.to_string()))?;
     let store = crate::session::SessionStore::open(&data_dir.join("sessions.db"))
         .map_err(|e| ServerError::Internal(e.to_string()))?;
-    let state = AppState::with_store(store);
+    let providers = match crate::provider::models_dev::fetch_dynamic_providers().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Warning: failed to load provider catalog: {e}");
+            vec![]
+        }
+    };
+    let state = AppState::with_store_and_catalog(store, providers);
     let app = create_router(state);
     let addr: std::net::SocketAddr = format!("{host}:{port}")
         .parse()
