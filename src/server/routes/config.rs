@@ -99,6 +99,11 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
         std::fs::File::create(dir.path().join(".git"))?; // Stop directory walk
+        // Point XDG_CONFIG_HOME at the empty temp dir so no global config is loaded.
+        // SAFETY: no other test in this module reads XDG_CONFIG_HOME in a way that
+        // would change assertions; concurrent tests either don't assert on model value
+        // or use project-level configs that override the global.
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
         let state = AppState::new();
         let app = create_router(state);
         let encoded = encode_path(dir.path());
@@ -107,6 +112,7 @@ mod tests {
         let response = app
             .oneshot(Request::builder().uri(&uri).body(Body::empty())?)
             .await?;
+        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
 
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(response.into_body(), 1_000_000).await?;
