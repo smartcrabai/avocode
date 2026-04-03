@@ -1,12 +1,33 @@
 use std::path::{Path, PathBuf};
 
+/// Returns the opencode config file in `dir`, preferring `.jsonc` over `.json`.
+/// Returns `None` when neither exists.
+pub(crate) fn config_file_in_dir(dir: &Path) -> Option<PathBuf> {
+    [dir.join("opencode.jsonc"), dir.join("opencode.json")]
+        .into_iter()
+        .find(|candidate| candidate.exists())
+}
+
 /// Returns the global user-level config directory for opencode.
 ///
-/// - Linux/macOS: `~/.config/opencode`
+/// opencode follows the XDG convention on all platforms:
+/// - Linux/macOS: `~/.config/opencode` (`XDG_CONFIG_HOME` or `~/.config`)
 /// - Windows: `%APPDATA%\opencode`
 #[must_use]
 pub fn global_config_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("opencode"))
+    // Respect XDG_CONFIG_HOME if set, otherwise fall back to ~/.config.
+    // This matches opencode's own config resolution on macOS and Linux.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let xdg_base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))?;
+        Some(xdg_base.join("opencode"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        dirs::config_dir().map(|p| p.join("opencode"))
+    }
 }
 
 /// Returns the system-wide config directory for opencode.
@@ -45,9 +66,9 @@ pub fn system_config_dir() -> Option<PathBuf> {
 
 /// Returns candidate config file paths collected by walking up from `directory`.
 ///
-/// For each ancestor directory the walk checks:
-/// - `<dir>/opencode.jsonc`
-/// - `<dir>/.opencode/opencode.jsonc`
+/// For each ancestor directory the walk checks (`.jsonc` preferred over `.json`):
+/// - `<dir>/opencode.jsonc` or `<dir>/opencode.json`
+/// - `<dir>/.opencode/opencode.jsonc` or `<dir>/.opencode/opencode.json`
 ///
 /// The walk stops when it reaches a git worktree root (a directory that contains
 /// a `.git` entry).  The returned list is ordered from the outermost (highest)
@@ -70,13 +91,11 @@ pub fn project_config_files(directory: &Path) -> Vec<PathBuf> {
 
     let mut result = Vec::new();
     for dir in ancestors {
-        let direct = dir.join("opencode.jsonc");
-        if direct.exists() {
-            result.push(direct);
+        if let Some(path) = config_file_in_dir(&dir) {
+            result.push(path);
         }
-        let nested = dir.join(".opencode").join("opencode.jsonc");
-        if nested.exists() {
-            result.push(nested);
+        if let Some(path) = config_file_in_dir(&dir.join(".opencode")) {
+            result.push(path);
         }
     }
     result

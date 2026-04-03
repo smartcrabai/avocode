@@ -181,6 +181,8 @@ fn load_file(path: &Path) -> Result<Config, ConfigError> {
 /// 2. Global user config (`~/.config/opencode/opencode.jsonc`)
 /// 3. Project configs ordered from outermost to innermost directory
 ///
+/// Each layer tries `opencode.jsonc` first, then falls back to `opencode.json`.
+///
 /// # Errors
 ///
 /// Returns [`ConfigError`] if any config file exists but cannot be read or parsed.
@@ -188,13 +190,17 @@ pub fn load(directory: &Path) -> Result<Config, ConfigError> {
     let mut config = Config::default();
 
     // 1. System config.
-    if let Some(sys_dir) = paths::system_config_dir() {
-        config = merge(config, load_file(&sys_dir.join("opencode.jsonc"))?);
+    if let Some(sys_dir) = paths::system_config_dir()
+        && let Some(path) = paths::config_file_in_dir(&sys_dir)
+    {
+        config = merge(config, load_file(&path)?);
     }
 
     // 2. Global user config.
-    if let Some(global_dir) = paths::global_config_dir() {
-        config = merge(config, load_file(&global_dir.join("opencode.jsonc"))?);
+    if let Some(global_dir) = paths::global_config_dir()
+        && let Some(path) = paths::config_file_in_dir(&global_dir)
+    {
+        config = merge(config, load_file(&path)?);
     }
 
     // 3. Project configs (outermost → innermost).
@@ -205,14 +211,18 @@ pub fn load(directory: &Path) -> Result<Config, ConfigError> {
     Ok(config)
 }
 
-/// Loads only the global user config from `~/.config/opencode/opencode.jsonc`.
+/// Loads only the global user config (`~/.config/opencode/opencode.jsonc` or
+/// `~/.config/opencode/opencode.json`).
 ///
 /// # Errors
 ///
 /// Returns [`ConfigError`] if the config file exists but cannot be read or parsed.
 pub fn load_global() -> Result<Config, ConfigError> {
     match paths::global_config_dir() {
-        Some(dir) => load_file(&dir.join("opencode.jsonc")),
+        Some(dir) => match paths::config_file_in_dir(&dir) {
+            Some(path) => load_file(&path),
+            None => Ok(Config::default()),
+        },
         None => Ok(Config::default()),
     }
 }
