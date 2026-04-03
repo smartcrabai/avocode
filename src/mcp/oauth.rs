@@ -50,7 +50,7 @@ const MAX_POLLS: u32 = 60;
 pub async fn fetch_oauth_token(server_url: &str, client_id: &str) -> Result<String, OAuthError> {
     let client = Client::new();
 
-    // Step 1 — request a device code.
+    // Step 1 -- request a device code.
     let device_resp: DeviceCodeResponse = client
         .post(format!("{server_url}/oauth/device/code"))
         .json(&serde_json::json!({ "client_id": client_id }))
@@ -62,7 +62,7 @@ pub async fn fetch_oauth_token(server_url: &str, client_id: &str) -> Result<Stri
 
     let interval = std::time::Duration::from_secs(device_resp.interval.unwrap_or(5));
 
-    // Step 2 — poll for the token.
+    // Step 2 -- poll for the token.
     for _ in 0..MAX_POLLS {
         tokio::time::sleep(interval).await;
 

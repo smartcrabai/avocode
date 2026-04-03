@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 /// Accepts `Vec<PermissionRule>` or any non-array value (e.g. opencode's `"allow"`
 /// shorthand), treating non-array values as an empty list.
-/// Array values are parsed strictly — malformed entries return a deserialization error.
+/// Array values are parsed strictly -- malformed entries return a deserialization error.
 fn deserialize_permission_rules<'de, D>(deserializer: D) -> Result<Vec<PermissionRule>, D::Error>
 where
     D: serde::Deserializer<'de>,

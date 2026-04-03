@@ -1,14 +1,14 @@
 //! Helper to start `ghcr.io/takumi3488/openai-mokku-go` via testcontainers.
 //!
 //! The mock provides OpenAI-compatible endpoints:
-//! - `GET  /v1/models`           → lists a single `gpt-4o` model
-//! - `POST /v1/chat/completions` → echoes the user message (streaming SSE)
+//! - `GET  /v1/models`           -> lists a single `gpt-4o` model
+//! - `POST /v1/chat/completions` -> echoes the user message (streaming SSE)
 //!
 //! # Platform note
 //!
 //! The published image is `linux/amd64` only.  On Apple Silicon (aarch64)
 //! Docker will emulate via Rosetta/QEMU.  If you see *image platform mismatch*
-//! errors, ensure Docker Desktop ≥ 4.19 with Rosetta enabled, or set
+//! errors, ensure Docker Desktop >= 4.19 with Rosetta enabled, or set
 //! `DOCKER_DEFAULT_PLATFORM=linux/amd64`.
 
 use std::time::Duration;

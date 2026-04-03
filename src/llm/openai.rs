@@ -15,7 +15,7 @@ impl OpenAiClient {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::HTTP_CLIENT.get_or_init(reqwest::Client::new).clone(),
         }
     }
 
@@ -27,7 +27,8 @@ impl OpenAiClient {
     pub async fn stream(
         &self,
         options: &StreamOptions,
-    ) -> Result<impl futures_util::Stream<Item = Result<StreamDelta, LlmError>>, LlmError> {
+    ) -> Result<impl futures_util::Stream<Item = Result<StreamDelta, LlmError>> + use<>, LlmError>
+    {
         let url = format!(
             "{}/v1/chat/completions",
             options.base_url.trim_end_matches('/')

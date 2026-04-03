@@ -74,6 +74,97 @@ async fn tui_send_message_displays_echo_response() {
 }
 
 // ---------------------------------------------------------------------------
+// Model picker -- switching between two OpenAI models
+// ---------------------------------------------------------------------------
+
+/// Opening the model picker with Ctrl+T, navigating to a different `OpenAI`
+/// model with the Down arrow, and pressing Enter should:
+///  1. Update the status bar to show the newly selected model.
+///  2. Still allow sending a message that receives an echo response.
+///
+/// This test uses the two-model `OpenAI` cache fixture (`gpt-4o` and
+/// `gpt-3.5-turbo`) so that navigation has a second entry to land on.
+/// It does **not** add non-openai providers to avoid changing the default
+/// model ordering for other tests.
+#[tokio::test]
+async fn tui_model_picker_switches_model_and_message_succeeds() {
+    // Given: a running mock container
+    let mock = OpenAiMock::start().await;
+
+    // Given: isolated environment with TWO openai models in the cache
+    let env = TestEnv::new();
+    env.write_two_openai_models_cache();
+    // Config points to gpt-4o so it is pre-selected on startup.
+    env.write_openai_config(&mock.base_url);
+
+    let env_overrides = env.env_overrides();
+    let project_path = env.project_path().to_owned();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut driver = TuiDriver::spawn(&env_overrides, &project_path);
+
+        // Then: wait for the TUI to render its initial frame
+        let ready = driver.wait_for(|screen| screen.contains("INSERT"), Duration::from_secs(15));
+        assert!(ready, "TUI did not render initial frame within 15 seconds");
+
+        // When: open the model picker with Ctrl+T (\x14)
+        driver.send_input("\x14");
+
+        // Then: the picker should appear (status bar hint or model list visible)
+        // We wait for "gpt-3.5-turbo" to appear in the picker list.
+        let picker_open = driver.wait_for(
+            |screen| screen.contains("gpt-3.5-turbo"),
+            Duration::from_secs(5),
+        );
+        assert!(
+            picker_open,
+            "model picker did not open within 5 seconds\nscreen:\n{}",
+            driver.screen_contents()
+        );
+
+        // When: navigate Down to gpt-3.5-turbo (Down arrow = ESC [ B)
+        driver.send_input("\x1b[B");
+
+        // When: press Enter to apply the selection
+        driver.send_input("\r");
+
+        // Then: wait for the picker to close (INSERT mode reappears) AND the
+        // status bar to show gpt-3.5-turbo.  Waiting for both together avoids
+        // a race where the condition matches the picker list before it closes.
+        let model_updated = driver.wait_for(
+            |screen| screen.contains("INSERT") && screen.contains("gpt-3.5-turbo"),
+            Duration::from_secs(5),
+        );
+        assert!(
+            model_updated,
+            "status bar did not update to gpt-3.5-turbo after model selection\nscreen:\n{}",
+            driver.screen_contents()
+        );
+
+        // When: send a message with the new model active
+        driver.send_input("hello");
+        driver.send_input("\r");
+
+        // Then: mock echoes the message (proves the new model was actually used)
+        let echoed = driver.wait_for(
+            |screen| screen.contains("Echo: hello"),
+            Duration::from_secs(30),
+        );
+
+        driver.send_ctrl_c();
+
+        assert!(
+            echoed,
+            "expected 'Echo: hello' after model switch within 30 seconds\nscreen:\n{}",
+            driver.screen_contents()
+        );
+    })
+    .await;
+
+    result.expect("TUI model-picker test task panicked");
+}
+
+// ---------------------------------------------------------------------------
 // Model picker pre-seeding
 // ---------------------------------------------------------------------------
 
@@ -102,7 +193,7 @@ fn tui_starts_with_pre_seeded_models_cache_without_network() {
 
     assert!(
         rendered,
-        "TUI did not render after 15 seconds — model cache pre-seeding may have failed\n\
+        "TUI did not render after 15 seconds -- model cache pre-seeding may have failed\n\
          screen:\n{}",
         driver.screen_contents()
     );

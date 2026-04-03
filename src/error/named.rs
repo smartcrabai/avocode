@@ -22,7 +22,7 @@ pub enum AppError {
     Config(String),
     #[error("Provider error: {0}")]
     Provider(String),
-    /// Catch-all variant — prefer a specific variant when possible.
+    /// Catch-all variant -- prefer a specific variant when possible.
     #[error("{0}")]
     Other(String),
 }
@@ -69,7 +69,7 @@ impl From<AppError> for ErrorObject {
     }
 }
 
-/// Convenience alias — all fallible operations in avocode return this type.
+/// Convenience alias -- all fallible operations in avocode return this type.
 pub type Result<T> = std::result::Result<T, AppError>;
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ pub struct ConfigQuery {
     pub directory: Option<String>,
 }
 
-/// GET /config → get current config
+/// GET /config -> get current config
 ///
 /// Loads configuration from the given directory, or from the current working
 /// directory if no `directory` query parameter is provided.
@@ -42,7 +42,7 @@ mod tests {
         path.display().to_string().replace('/', "%2F")
     }
 
-    // ─── GET /config ────────────────────────────────────────────────────────────
+    // --- GET /config -------------------------------------------------------------
 
     #[tokio::test]
     async fn test_get_config_returns_200_without_directory()

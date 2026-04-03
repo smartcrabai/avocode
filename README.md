@@ -59,7 +59,17 @@ avocode
 |-----|--------|
 | `Enter` | Send message |
 | `PageUp / PageDown` | Scroll chat |
+| `Ctrl+T` | Open model picker |
 | `Ctrl+C` | Quit |
+
+**Model picker keys:**
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move highlight up |
+| `↓` / `j` | Move highlight down |
+| `Enter` | Apply selected model |
+| `Esc` | Close without changing model |
 
 ### Non-interactive mode
 

@@ -1,7 +1,11 @@
 use futures_util::StreamExt as _;
 
+use crate::llm::anthropic::{ANTHROPIC_API_BASE, AnthropicClient};
+use crate::llm::google::{GOOGLE_API_BASE, GoogleClient};
 use crate::llm::openai::{OPENAI_API_BASE, OpenAiClient};
-use crate::llm::{ChatMessage, ContentPart, MessageRole as LlmRole, StreamOptions};
+use crate::llm::{
+    ChatMessage, ContentPart, LlmError, MessageRole as LlmRole, StreamDelta, StreamOptions,
+};
 
 use super::message::{Message, Part, TextPart};
 use super::model_parser::parse_qualified_model;
@@ -11,7 +15,6 @@ pub struct ProcessOptions {
     pub user_message: String,
     pub model: Option<String>,
     pub agent: String,
-    pub max_turns: Option<u32>,
 }
 
 pub enum ProcessEvent {
@@ -25,6 +28,41 @@ pub enum ProcessEvent {
     },
     Done,
     Error(String),
+}
+
+/// Select the best API key from an already-resolved environment variable value
+/// or a config-file value.
+///
+/// `env_val` is `Some(value)` when the caller already read the environment
+/// variable and it was non-empty; `None` otherwise.  `config_key` is the
+/// optional value from the provider config block.  The env var always wins
+/// over the config value.  Empty strings are treated as absent.
+fn pick_api_key(env_val: Option<String>, config_key: Option<&str>) -> Option<String> {
+    if let Some(val) = env_val
+        && !val.is_empty()
+    {
+        return Some(val);
+    }
+    config_key.filter(|k| !k.is_empty()).map(str::to_owned)
+}
+
+/// Convert a client stream `Result` into a type-erased boxed stream, sending
+/// a `ProcessEvent::Error` over `tx` on failure.  Returns `None` when the
+/// caller should bail out with `return Ok(())`.
+async fn try_box_stream<S>(
+    result: Result<S, LlmError>,
+    tx: &tokio::sync::mpsc::Sender<ProcessEvent>,
+) -> Option<std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<StreamDelta, LlmError>> + Send>>>
+where
+    S: futures_util::Stream<Item = Result<StreamDelta, LlmError>> + Send + 'static,
+{
+    match result {
+        Ok(s) => Some(Box::pin(s)),
+        Err(e) => {
+            let _ = tx.send(ProcessEvent::Error(e.to_string())).await;
+            None
+        }
+    }
 }
 
 /// Run the agent loop: persist user message, call the OpenAI-compatible LLM,
@@ -84,40 +122,40 @@ pub async fn process(
         return Ok(());
     };
 
-    // Only the openai provider is supported for now.
-    if provider_id != "openai" {
-        let _ = tx
-            .send(ProcessEvent::Error(format!(
-                "unsupported provider for this execution path: {provider_id}"
-            )))
-            .await;
-        return Ok(());
-    }
-
     let provider_config = config.provider.get(&provider_id);
 
-    // Precedence: env var > config api_key
-    let api_key = if let Ok(k) = std::env::var("OPENAI_API_KEY")
-        && !k.is_empty()
-    {
-        k
-    } else if let Some(k) = provider_config.and_then(|c| c.api_key.as_ref())
-        && !k.is_empty()
-    {
-        k.clone()
-    } else {
+    // Resolve the provider-specific env var name and default base URL.
+    let (env_var, default_base) = match provider_id.as_str() {
+        "openai" => ("OPENAI_API_KEY", OPENAI_API_BASE),
+        "anthropic" => ("ANTHROPIC_API_KEY", ANTHROPIC_API_BASE),
+        "google" => ("GOOGLE_API_KEY", GOOGLE_API_BASE),
+        _ => {
+            let _ = tx
+                .send(ProcessEvent::Error(format!(
+                    "unsupported provider for this execution path: {provider_id}"
+                )))
+                .await;
+            return Ok(());
+        }
+    };
+
+    let api_key_env = std::env::var(env_var).ok();
+    let Some(api_key) = pick_api_key(
+        api_key_env,
+        provider_config.and_then(|c| c.api_key.as_deref()),
+    ) else {
         let _ = tx
-            .send(ProcessEvent::Error(
-                "no OpenAI API key configured (set OPENAI_API_KEY or provider.openai.api_key)"
-                    .to_owned(),
-            ))
+            .send(ProcessEvent::Error(format!(
+                "no API key configured for {provider_id} \
+                 (set {env_var} or provider.{provider_id}.api_key)"
+            )))
             .await;
         return Ok(());
     };
 
     let base_url = provider_config
         .and_then(|c| c.base_url.clone())
-        .unwrap_or_else(|| OPENAI_API_BASE.to_owned());
+        .unwrap_or_else(|| default_base.to_owned());
 
     let stored_messages = store.list_messages(&options.session_id)?;
     let llm_messages: Vec<ChatMessage> = stored_messages
@@ -157,13 +195,14 @@ pub async fn process(
         base_url,
     };
 
-    let client = OpenAiClient::new();
-    let mut stream = match client.stream(&stream_opts).await {
-        Ok(s) => Box::pin(s),
-        Err(e) => {
-            let _ = tx.send(ProcessEvent::Error(e.to_string())).await;
-            return Ok(());
-        }
+    let stream_result = match provider_id.as_str() {
+        "openai" => try_box_stream(OpenAiClient::new().stream(&stream_opts).await, &tx).await,
+        "anthropic" => try_box_stream(AnthropicClient::new().stream(&stream_opts).await, &tx).await,
+        "google" => try_box_stream(GoogleClient::new().stream(&stream_opts).await, &tx).await,
+        _ => unreachable!("unsupported providers are rejected before stream creation"),
+    };
+    let Some(mut stream) = stream_result else {
+        return Ok(());
     };
 
     let text_part_id = super::schema::new_id();
@@ -184,12 +223,12 @@ pub async fn process(
     while let Some(delta_result) = stream.next().await {
         match delta_result {
             Ok(delta) => {
-                if let Some(chunk) = &delta.text {
-                    accumulated_text.push_str(chunk);
+                if let Some(chunk) = delta.text {
+                    accumulated_text.push_str(&chunk);
 
                     let delta_part = Part::Text(TextPart {
                         id: text_part_id.clone(),
-                        text: chunk.clone(),
+                        text: chunk,
                     });
                     let _ = tx
                         .send(ProcessEvent::PartUpdated {
@@ -241,7 +280,6 @@ mod tests {
             // Unqualified model: processor emits Error as terminal event.
             model: Some("claude-3-5-sonnet".to_owned()),
             agent: "default".to_owned(),
-            max_turns: None,
         };
 
         process(&store, options, tx).await?;
@@ -273,7 +311,6 @@ mod tests {
             user_message: "hello agent".to_owned(),
             model: Some("claude-3-5-sonnet".to_owned()),
             agent: "default".to_owned(),
-            max_turns: Some(5),
         };
 
         process(&store, options, tx).await?;
@@ -283,5 +320,126 @@ mod tests {
         assert!(!messages.is_empty());
 
         Ok(())
+    }
+
+    // ================================================================
+    // pick_api_key -- env-over-config precedence
+    // ================================================================
+
+    #[test]
+    fn pick_api_key_env_takes_precedence_over_config() {
+        let result = pick_api_key(Some("env-key".to_owned()), Some("config-key"));
+        assert_eq!(result.as_deref(), Some("env-key"));
+    }
+
+    #[test]
+    fn pick_api_key_falls_back_to_config_when_env_is_absent() {
+        let result = pick_api_key(None, Some("config-key"));
+        assert_eq!(result.as_deref(), Some("config-key"));
+    }
+
+    #[test]
+    fn pick_api_key_returns_none_when_both_absent() {
+        let result = pick_api_key(None, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn pick_api_key_treats_empty_env_val_as_absent() {
+        // empty string (shell variable set but empty) falls back to config
+        let result = pick_api_key(Some(String::new()), Some("config-key"));
+        assert_eq!(result.as_deref(), Some("config-key"));
+    }
+
+    #[test]
+    fn pick_api_key_returns_env_val_when_config_is_absent() {
+        let result = pick_api_key(Some("env-only".to_owned()), None);
+        assert_eq!(result.as_deref(), Some("env-only"));
+    }
+
+    // ================================================================
+    // Provider dispatch -- supported providers emit credential error, not
+    // "unsupported provider", when no API key is configured.
+    // ================================================================
+
+    /// Run `process` with the given model string and assert that the second
+    /// event is a `ProcessEvent::Error` whose message satisfies `check`.
+    async fn assert_dispatch_error(
+        model: &str,
+        check: impl Fn(&str) -> bool,
+        fail_msg: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let session = Session::new("proj-1".to_owned(), "/dir".to_owned());
+        store.create_session(&session)?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let options = ProcessOptions {
+            session_id: session.id.clone(),
+            user_message: "hello".to_owned(),
+            model: Some(model.to_owned()),
+            agent: "default".to_owned(),
+        };
+
+        process(&store, options, tx).await?;
+
+        let _event1 = rx.recv().await.ok_or("expected MessageCreated")?;
+        let event2 = rx.recv().await.ok_or("expected Error event")?;
+        match event2 {
+            ProcessEvent::Error(msg) => assert!(check(&msg), "{fail_msg}, got: {msg}"),
+            _other => panic!("expected ProcessEvent::Error, got a different variant"),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_anthropic_model_without_api_key_emits_credential_error()
+    -> Result<(), Box<dyn std::error::Error>> {
+        temp_env::async_with_vars(
+            [("ANTHROPIC_API_KEY", None::<&str>)],
+            async {
+                assert_dispatch_error(
+                    "anthropic/claude-opus-4",
+                    |msg| {
+                        !msg.contains("unsupported provider")
+                            && (msg.to_lowercase().contains("api key")
+                                || msg.to_lowercase().contains("anthropic"))
+                    },
+                    "anthropic must be a supported provider; error must mention api key or provider name",
+                )
+                .await
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn process_google_model_without_api_key_emits_credential_error()
+    -> Result<(), Box<dyn std::error::Error>> {
+        temp_env::async_with_vars([("GOOGLE_API_KEY", None::<&str>)], async {
+            assert_dispatch_error(
+                "google/gemini-1.5-pro",
+                |msg| {
+                    !msg.contains("unsupported provider")
+                        && (msg.to_lowercase().contains("api key")
+                            || msg.to_lowercase().contains("google"))
+                },
+                "google must be a supported provider; error must mention api key or provider name",
+            )
+            .await
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn process_bogus_provider_emits_unsupported_error()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert_dispatch_error(
+            "bogus/some-model",
+            |msg| msg.contains("unsupported"),
+            "unknown provider should emit unsupported error",
+        )
+        .await
     }
 }

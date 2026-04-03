@@ -198,7 +198,7 @@ async fn http_list_sessions_includes_created_session() {
 }
 
 // ---------------------------------------------------------------------------
-// Negative path — credit-error model
+// Negative path -- credit-error model
 // ---------------------------------------------------------------------------
 
 /// Using the `credit-error` model should result in an error being surfaced

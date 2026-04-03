@@ -1,7 +1,7 @@
 //! Minimal, terminal-friendly style definitions.
 //!
 //! Replaces the previous multi-theme `Theme` system with a single, fixed
-//! colour palette that relies on ANSI defaults where possible — mirroring
+//! colour palette that relies on ANSI defaults where possible -- mirroring
 //! the approach described in `codex-rs/tui/styles.md`.
 
 use ratatui::style::Color;
@@ -9,9 +9,9 @@ use ratatui::style::Color;
 /// Minimal colour palette for the simplified TUI.
 ///
 /// Only three semantic colours are exposed:
-/// - **foreground** – default text colour
-/// - **accent**     – headings, prompts, borders
-/// - **muted**      – key hints, secondary text
+/// - **foreground** - default text colour
+/// - **accent**     - headings, prompts, borders
+/// - **muted**      - key hints, secondary text
 #[derive(Debug, Clone)]
 pub struct Styles {
     pub foreground: Color,

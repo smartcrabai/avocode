@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::super::error::ServerError;
 use super::super::state::{AppState, ServerEvent};
 
-/// GET /session → list sessions
+/// GET /session -> list sessions
 ///
 /// # Errors
 ///
@@ -30,7 +30,7 @@ pub async fn list_sessions(
     Ok(Json(summaries))
 }
 
-/// POST /session → create session
+/// POST /session -> create session
 ///
 /// # Errors
 ///
@@ -75,7 +75,7 @@ pub async fn create_session(
     }))
 }
 
-/// GET /session/{id} → get session
+/// GET /session/{id} -> get session
 ///
 /// # Errors
 ///
@@ -96,7 +96,7 @@ pub async fn get_session(
     }))
 }
 
-/// POST /session/{id}/message → send message
+/// POST /session/{id}/message -> send message
 ///
 /// Runs the processor synchronously and returns the full assistant reply.
 ///
@@ -116,7 +116,6 @@ pub async fn send_message(
         user_message: req.content.clone(),
         model: req.model,
         agent: "default".to_owned(),
-        max_turns: None,
     };
 
     // Spawn the processor so the channel drain runs concurrently.
@@ -165,7 +164,7 @@ pub async fn send_message(
     })))
 }
 
-/// GET /session/defaults?directory=... → return the last-used `config_ref` for a directory
+/// GET /session/defaults?directory=... -> return the last-used `config_ref` for a directory
 ///
 /// # Errors
 ///

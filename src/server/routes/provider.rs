@@ -2,7 +2,7 @@ use axum::extract::{Path, State};
 
 use crate::server::state::AppState;
 
-/// GET /provider → list providers from the catalog
+/// GET /provider -> list providers from the catalog
 pub async fn list_providers(State(state): State<AppState>) -> axum::Json<Vec<ProviderSummary>> {
     let summaries = state
         .provider_catalog
@@ -16,7 +16,7 @@ pub async fn list_providers(State(state): State<AppState>) -> axum::Json<Vec<Pro
     axum::Json(summaries)
 }
 
-/// GET /provider/:id/model → list models for a provider from the catalog
+/// GET /provider/:id/model -> list models for a provider from the catalog
 pub async fn list_models(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -89,7 +89,7 @@ mod tests {
             .with_state(state)
     }
 
-    // ─── GET /provider ────────────────────────────────────────────────────────
+    // --- GET /provider -----------------------------------------------------------
 
     #[tokio::test]
     async fn test_list_providers_returns_ok_with_non_empty_catalog()
@@ -134,7 +134,7 @@ mod tests {
         Ok(())
     }
 
-    // ─── GET /provider/:id/model ──────────────────────────────────────────────
+    // --- GET /provider/:id/model -------------------------------------------------
 
     #[tokio::test]
     async fn test_list_models_returns_models_for_known_provider()
