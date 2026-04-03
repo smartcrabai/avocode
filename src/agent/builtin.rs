@@ -39,7 +39,7 @@ fn build_agent() -> AgentInfo {
 fn plan_agent() -> AgentInfo {
     AgentInfo {
         name: "plan".into(),
-        description: "Read-only planning mode — only reads files, cannot make changes".into(),
+        description: "Read-only planning mode -- only reads files, cannot make changes".into(),
         mode: AgentMode::Primary,
         native: true,
         hidden: false,
@@ -65,7 +65,7 @@ fn explore_agent() -> AgentInfo {
     AgentInfo {
         name: "explore".into(),
         description:
-            "Fast code exploration subagent — read-only access for quickly finding information"
+            "Fast code exploration subagent -- read-only access for quickly finding information"
                 .into(),
         mode: AgentMode::Subagent,
         native: true,

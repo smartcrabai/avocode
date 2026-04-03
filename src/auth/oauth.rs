@@ -192,7 +192,7 @@ mod tests {
     fn test_pkce_challenge_valid() {
         let v = pkce_verifier();
         let c = pkce_challenge(&v);
-        // SHA256 of any input is 32 bytes → 43 base64url chars (no padding)
+        // SHA256 of any input is 32 bytes -> 43 base64url chars (no padding)
         assert_eq!(
             c.len(),
             43,

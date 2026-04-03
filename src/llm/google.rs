@@ -16,7 +16,7 @@ impl GoogleClient {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::HTTP_CLIENT.get_or_init(reqwest::Client::new).clone(),
         }
     }
 
@@ -28,7 +28,8 @@ impl GoogleClient {
     pub async fn stream(
         &self,
         options: &StreamOptions,
-    ) -> Result<impl futures_util::Stream<Item = Result<StreamDelta, LlmError>>, LlmError> {
+    ) -> Result<impl futures_util::Stream<Item = Result<StreamDelta, LlmError>> + use<>, LlmError>
+    {
         let url = format!(
             "{}/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             options.base_url.trim_end_matches('/'),

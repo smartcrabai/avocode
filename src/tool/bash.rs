@@ -44,8 +44,8 @@ impl crate::tool::Tool for BashTool {
                 .ok_or_else(|| ToolError::InvalidArguments("command required".into()))?;
             let timeout_secs = args["timeout"].as_u64().unwrap_or(30).min(300);
 
-            let title = if command.len() > 80 {
-                format!("{}…", &command[..79])
+            let title = if command.chars().count() > 80 {
+                format!("{}...", command.chars().take(79).collect::<String>())
             } else {
                 command.to_owned()
             };

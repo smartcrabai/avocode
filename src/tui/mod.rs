@@ -13,7 +13,9 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{StatefulWidget, Widget},
 };
-use widgets::{chat::ChatWidget, input::InputWidget, statusbar::StatusBar};
+use widgets::{
+    chat::ChatWidget, input::InputWidget, model_picker::ModelPicker, statusbar::StatusBar,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TuiError {
@@ -118,13 +120,26 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
 
             ChatWidget { styles }.render(chunks[0], frame.buffer_mut(), &mut app.chat);
             InputWidget { styles }.render(chunks[1], frame.buffer_mut(), &mut app.input);
+            let keys_hint = if app.picker_open {
+                "up/down/jk move  Enter apply  Esc close"
+            } else {
+                "^T models  ^C quit"
+            };
             StatusBar {
                 styles,
                 model: app.selected_model.as_deref().unwrap_or("(no model)"),
                 mode: "INSERT",
-                keys_hint: "^C quit",
+                keys_hint,
             }
             .render(chunks[2], frame.buffer_mut());
+            if app.picker_open {
+                ModelPicker {
+                    styles,
+                    models: &app.models,
+                    highlight: app.picker_highlight,
+                }
+                .render(area, frame.buffer_mut());
+            }
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))?
@@ -147,7 +162,6 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                     user_message: user_text,
                     model,
                     agent: "default".to_owned(),
-                    max_turns: None,
                 };
 
                 // Spawn the processor so the channel drain below runs concurrently.

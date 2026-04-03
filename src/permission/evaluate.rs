@@ -106,7 +106,7 @@ mod tests {
             pattern: "*".into(),
             action: PermissionAction::Allow,
         }];
-        // config_rules comes last → Allow wins
+        // config_rules comes last -> Allow wins
         assert_eq!(
             evaluate("bash", "*", &[&agent_rules, &config_rules]),
             PermissionAction::Allow

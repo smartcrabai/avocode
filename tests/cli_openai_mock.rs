@@ -133,7 +133,7 @@ async fn cli_multi_word_message_is_echoed_in_full() {
 }
 
 // ---------------------------------------------------------------------------
-// Negative path — credit-error model
+// Negative path -- credit-error model
 // ---------------------------------------------------------------------------
 
 /// Using the `credit-error` model triggers a quota error from the mock.

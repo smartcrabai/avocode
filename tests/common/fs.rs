@@ -16,9 +16,9 @@ use tempfile::TempDir;
 /// project root and does not accidentally pick up real `opencode.jsonc` files
 /// higher in the directory tree.
 pub struct TestEnv {
-    /// Temporary home directory — keep alive for the life of the test.
+    /// Temporary home directory -- keep alive for the life of the test.
     pub home_dir: TempDir,
-    /// Temporary project directory — keep alive for the life of the test.
+    /// Temporary project directory -- keep alive for the life of the test.
     pub project_dir: TempDir,
 }
 
@@ -93,69 +93,15 @@ impl TestEnv {
     /// Format: `Vec<ProviderInfo>` serialised as JSON
     /// (see `src/provider/schema.rs` and `src/provider/models_dev.rs`).
     pub fn write_models_cache(&self) {
-        let cache_dir = self.avocode_cache_dir();
-        std::fs::create_dir_all(&cache_dir).expect("failed to create avocode cache dir");
-
-        let cache_data = serde_json::json!([
-            {
-                "id": "openai",
-                "name": "OpenAI",
-                "env": ["OPENAI_API_KEY"],
-                "models": [
-                    {
-                        "id": "gpt-4o",
-                        "name": "GPT-4o",
-                        "provider_id": "openai",
-                        "family": null,
-                        "capabilities": {
-                            "tools": true,
-                            "vision": true,
-                            "reasoning": false,
-                            "streaming": true,
-                            "temperature": true,
-                            "attachment": false,
-                            "computer_use": false
-                        },
-                        "cost": {
-                            "input": 0.0,
-                            "output": 0.0,
-                            "cache_read": null,
-                            "cache_write": null
-                        },
-                        "context_length": null,
-                        "output_length": null,
-                        "status": "active"
-                    },
-                    {
-                        "id": "credit-error",
-                        "name": "credit-error",
-                        "provider_id": "openai",
-                        "family": null,
-                        "capabilities": {
-                            "tools": false,
-                            "vision": false,
-                            "reasoning": false,
-                            "streaming": true,
-                            "temperature": true,
-                            "attachment": false,
-                            "computer_use": false
-                        },
-                        "cost": {
-                            "input": 0.0,
-                            "output": 0.0,
-                            "cache_read": null,
-                            "cache_write": null
-                        },
-                        "context_length": null,
-                        "output_length": null,
-                        "status": "active"
-                    }
-                ]
-            }
-        ]);
-
-        std::fs::write(cache_dir.join("models.json"), cache_data.to_string())
-            .expect("failed to write models.json cache");
+        self.write_models_cache_json(&serde_json::json!([{
+            "id": "openai",
+            "name": "OpenAI",
+            "env": ["OPENAI_API_KEY"],
+            "models": [
+                openai_model_entry("gpt-4o", "GPT-4o", true, true),
+                openai_model_entry("credit-error", "credit-error", false, false),
+            ]
+        }]));
     }
 
     // ---- process environment helpers ----
@@ -188,6 +134,35 @@ impl TestEnv {
         overrides
     }
 
+    /// Pre-seed the models cache with **two** `OpenAI` models (`gpt-4o` and
+    /// `gpt-3.5-turbo`) so that model-picker tests have two selectable entries
+    /// to navigate between.
+    ///
+    /// Does **not** add non-openai providers to avoid changing the default
+    /// model ordering expected by unrelated tests.
+    pub fn write_two_openai_models_cache(&self) {
+        self.write_models_cache_json(&serde_json::json!([{
+            "id": "openai",
+            "name": "OpenAI",
+            "env": ["OPENAI_API_KEY"],
+            "models": [
+                openai_model_entry("gpt-4o", "GPT-4o", true, true),
+                openai_model_entry("gpt-3.5-turbo", "GPT-3.5 Turbo", false, true),
+            ]
+        }]));
+    }
+
+    // ---- private helpers ----
+
+    /// Write `data` as `models.json` into the platform-specific avocode cache dir,
+    /// creating the directory if it does not yet exist.
+    fn write_models_cache_json(&self, data: &serde_json::Value) {
+        let cache_dir = self.avocode_cache_dir();
+        std::fs::create_dir_all(&cache_dir).expect("failed to create avocode cache dir");
+        std::fs::write(cache_dir.join("models.json"), data.to_string())
+            .expect("failed to write models.json cache");
+    }
+
     // ---- private path helpers ----
 
     /// Path equivalent to `dirs::cache_dir().unwrap().join("avocode")` when
@@ -195,6 +170,29 @@ impl TestEnv {
     fn avocode_cache_dir(&self) -> PathBuf {
         platform_cache_base(self.home_dir.path()).join("avocode")
     }
+}
+
+/// Build a single `OpenAI` model entry for the models-cache JSON fixture.
+fn openai_model_entry(id: &str, name: &str, vision: bool, tools: bool) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "name": name,
+        "provider_id": "openai",
+        "family": null,
+        "capabilities": {
+            "tools": tools,
+            "vision": vision,
+            "reasoning": false,
+            "streaming": true,
+            "temperature": true,
+            "attachment": false,
+            "computer_use": false
+        },
+        "cost": { "input": 0.0, "output": 0.0, "cache_read": null, "cache_write": null },
+        "context_length": null,
+        "output_length": null,
+        "status": "active"
+    })
 }
 
 /// Returns the platform-specific base cache directory given a `home` path.

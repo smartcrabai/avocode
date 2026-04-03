@@ -52,6 +52,7 @@ uuid = { version = "1", features = ["v4", "v7"] }
 
 [dev-dependencies]
 portable-pty = "0.8"
+temp-env = { version = "0.3", features = ["async_closure"] }
 testcontainers = "0.23"
 vt100 = "0.15"
 [profile.release]

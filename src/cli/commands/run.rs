@@ -44,7 +44,6 @@ pub async fn execute(args: RunArgs) -> crate::cli::Result<()> {
         })?,
         model: args.model,
         agent: "default".to_owned(),
-        max_turns: None,
     };
     // Spawn the processor so we can drain the channel concurrently.
     // Without this, a response longer than the channel capacity (64 chunks) would

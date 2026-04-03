@@ -18,12 +18,12 @@ pub struct ReplyResponse {
     pub reply: String,
 }
 
-/// GET /permission → list pending permission requests
+/// GET /permission -> list pending permission requests
 pub async fn list_pending(State(state): State<AppState>) -> axum::Json<Vec<PermissionRequest>> {
     axum::Json(state.permission_manager.pending_requests())
 }
 
-/// POST /permission/:id → reply to permission request
+/// POST /permission/:id -> reply to permission request
 ///
 /// # Errors
 ///
@@ -115,7 +115,7 @@ mod tests {
         (manager, req_id)
     }
 
-    // ─── GET /permission ────────────────────────────────────────────────────────
+    // --- GET /permission ---------------------------------------------------------
 
     #[tokio::test]
     async fn test_list_pending_returns_empty_when_no_requests()
@@ -166,7 +166,7 @@ mod tests {
         Ok(())
     }
 
-    // ─── POST /permission/{id} ──────────────────────────────────────────────────
+    // --- POST /permission/{id} ---------------------------------------------------
 
     #[tokio::test]
     async fn test_reply_permission_returns_ok_for_valid_once_reply()

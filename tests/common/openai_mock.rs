@@ -26,7 +26,7 @@ use testcontainers::{ContainerAsync, GenericImage};
 pub struct OpenAiMock {
     /// Holds the container alive for the duration of the test.
     _container: ContainerAsync<GenericImage>,
-    /// `http://127.0.0.1:<mapped-port>` — ready to use as `provider.openai.base_url`.
+    /// `http://127.0.0.1:<mapped-port>` -- ready to use as `provider.openai.base_url`.
     pub base_url: String,
 }
 

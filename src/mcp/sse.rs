@@ -20,7 +20,7 @@ impl SseTransport {
     /// Connect to the SSE endpoint and prepare the POST URL.
     ///
     /// By convention the POST URL is `{url}/message` and the SSE endpoint is
-    /// `{url}/sse`, but some servers use the same URL for both — in that case
+    /// `{url}/sse`, but some servers use the same URL for both -- in that case
     /// the caller should pass the full URLs directly.
     ///
     /// # Errors

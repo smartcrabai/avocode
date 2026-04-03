@@ -130,7 +130,7 @@ impl McpClient {
             let raw = self.transport.recv().await?;
             let resp: JsonRpcResponse = serde_json::from_str(&raw)?;
             if resp.id != id {
-                // Not our response — skip (could be a notification).
+                // Not our response -- skip (could be a notification).
                 continue;
             }
             if let Some(err) = resp.error {

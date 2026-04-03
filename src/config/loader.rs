@@ -15,7 +15,7 @@ pub fn strip_jsonc_comments(input: &str) -> String {
     let mut i = 0;
 
     while i < len {
-        // Inside a string literal — copy verbatim until the closing `"`.
+        // Inside a string literal -- copy verbatim until the closing `"`.
         if chars[i] == '"' {
             out.push(chars[i]);
             i += 1;
@@ -203,7 +203,7 @@ pub fn load(directory: &Path) -> Result<Config, ConfigError> {
         config = merge(config, load_file(&path)?);
     }
 
-    // 3. Project configs (outermost → innermost).
+    // 3. Project configs (outermost -> innermost).
     for project_file in paths::project_config_files(directory) {
         config = merge(config, load_file(&project_file)?);
     }

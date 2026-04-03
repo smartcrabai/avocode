@@ -33,7 +33,7 @@ impl PermissionManager {
 
     /// Check permission for `request` against the provided rule stacks.
     ///
-    /// Rule evaluation order (last-match-wins): config → agent → session.
+    /// Rule evaluation order (last-match-wins): config -> agent -> session.
     /// Session rules have the highest priority (applied last).
     /// Blocks asynchronously when action is `Ask` until a reply is submitted.
     ///

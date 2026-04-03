@@ -132,7 +132,7 @@ pub async fn complete_browser_auth(
 ) -> Result<OAuthTokens, AuthError> {
     if returned_state != pending.state {
         return Err(AuthError::Rejected(
-            "State mismatch — possible CSRF attack".to_string(),
+            "State mismatch -- possible CSRF attack".to_string(),
         ));
     }
 
@@ -231,7 +231,7 @@ pub async fn get_valid_token(store: &AuthStore) -> Result<String, AuthError> {
     }
 }
 
-/// Minimal JWT sub extraction (no verification — only for reading account ID).
+/// Minimal JWT sub extraction (no verification -- only for reading account ID).
 fn extract_jwt_sub(jwt: &str) -> Option<String> {
     let parts: Vec<&str> = jwt.split('.').collect();
     let payload = parts.get(1)?;
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_extract_jwt_sub_valid() {
-        // Craft a minimal JWT with sub claim (no real signing needed — we don't verify)
+        // Craft a minimal JWT with sub claim (no real signing needed -- we don't verify)
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
         let payload = URL_SAFE_NO_PAD.encode(r#"{"sub":"user_123","email":"test@example.com"}"#);
