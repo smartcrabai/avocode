@@ -176,6 +176,28 @@ impl SessionStore {
     }
 
     /// # Errors
+    /// Returns [`super::SessionError`] on `SQLite` or deserialization failure.
+    pub fn get_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<Option<Message>, super::SessionError> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare("SELECT data FROM messages WHERE id = ?1 AND session_id = ?2")
+            .map_err(super::SessionError::Sqlite)?;
+        let mut rows = stmt
+            .query(params![message_id, session_id])
+            .map_err(super::SessionError::Sqlite)?;
+        if let Some(row) = rows.next().map_err(super::SessionError::Sqlite)? {
+            let data: String = row.get(0).map_err(super::SessionError::Sqlite)?;
+            let message = serde_json::from_str(&data).map_err(super::SessionError::Serde)?;
+            return Ok(Some(message));
+        }
+        Ok(None)
+    }
+
+    /// # Errors
     /// Returns [`super::SessionError`] on `SQLite` failure.
     pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>, super::SessionError> {
         let conn = self.lock()?;
