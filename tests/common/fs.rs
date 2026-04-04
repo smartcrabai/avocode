@@ -209,3 +209,16 @@ fn platform_cache_base(home: &Path) -> PathBuf {
         home.join(".cache")
     }
 }
+
+// ---- skill helpers ----
+
+/// Write a `SKILL.md` into the project directory under `.opencode/skills/<name>/`.
+///
+/// The frontmatter includes the given `name` and `description`.  The `body`
+/// becomes the skill content.
+pub fn write_project_skill(project_dir: &Path, name: &str, description: &str, body: &str) {
+    let skill_dir = project_dir.join(".opencode").join("skills").join(name);
+    std::fs::create_dir_all(&skill_dir).expect("failed to create skill dir");
+    let content = format!("---\nname: {name}\ndescription: {description}\n---\n{body}");
+    std::fs::write(skill_dir.join("SKILL.md"), content).expect("failed to write SKILL.md");
+}

@@ -11,6 +11,7 @@ pub mod permission;
 pub mod provider;
 pub mod server;
 pub mod session;
+pub mod skill;
 pub mod storage;
 pub mod tool;
 pub mod tui;
