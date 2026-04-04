@@ -26,6 +26,7 @@ use common::process::{free_local_port, spawn_avocode_serve, wait_for_server};
 /// `POST /session/{id}/message` with `"hello"` should return a response body
 /// that contains `Echo: hello` once the processor calls the mock.
 #[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
 async fn http_send_message_returns_echoed_assistant_text() {
     // Given: a running mock container
     let mock = OpenAiMock::start().await;
@@ -204,6 +205,7 @@ async fn http_list_sessions_includes_created_session() {
 /// Using the `credit-error` model should result in an error being surfaced
 /// in the response rather than an echoed assistant message.
 #[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
 async fn http_credit_error_model_surfaces_error_in_response() {
     // Given: mock container + isolated env with credit-error config
     let mock = OpenAiMock::start().await;
@@ -268,6 +270,7 @@ async fn http_credit_error_model_surfaces_error_in_response() {
 /// After sending a message, the `/event` SSE stream should emit at least one
 /// event related to the message (e.g. `MessageCreated` or `PartUpdated`).
 #[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
 async fn http_event_stream_emits_message_events_after_send() {
     use futures_util::StreamExt;
 

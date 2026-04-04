@@ -83,15 +83,7 @@ pub async fn process(
     options: ProcessOptions,
     tx: tokio::sync::mpsc::Sender<ProcessEvent>,
 ) -> Result<(), super::SessionError> {
-    let user_message = Message::user(options.session_id.clone(), options.user_message.clone());
-    store.add_message(&user_message)?;
-    let _ = tx
-        .send(ProcessEvent::MessageCreated {
-            message: user_message,
-        })
-        .await;
-
-    // Load session to find its directory for config resolution.
+    // Load session first for directory-based skill and config resolution.
     let Some(session) = store.get_session(&options.session_id)? else {
         let _ = tx
             .send(ProcessEvent::Error(format!(
@@ -104,6 +96,21 @@ pub async fn process(
 
     let config =
         crate::config::loader::load(std::path::Path::new(&session.directory)).unwrap_or_default();
+
+    // Resolve slash-skill expansion before persisting the user message.
+    let skills = crate::skill::discover(std::path::Path::new(&session.directory));
+    let effective_text = match crate::skill::resolve_slash_skill(&skills, &options.user_message) {
+        crate::skill::ResolvedSlashInput::Expanded(text)
+        | crate::skill::ResolvedSlashInput::Unchanged(text) => text,
+    };
+
+    let user_message = Message::user(options.session_id.clone(), effective_text);
+    store.add_message(&user_message)?;
+    let _ = tx
+        .send(ProcessEvent::MessageCreated {
+            message: user_message,
+        })
+        .await;
 
     // CLI arg > config.model precedence.
     let Some(model_str) = options.model.or(config.model) else {
@@ -441,5 +448,109 @@ mod tests {
             "unknown provider should emit unsupported error",
         )
         .await
+    }
+
+    // ================================================================
+    // Slash-skill expansion in processor
+    // ================================================================
+
+    /// Helper: create a temp project with a `.git` marker and a single skill.
+    fn create_skill_project(
+        skill_name: &str,
+        skill_body: &str,
+    ) -> Result<tempfile::TempDir, Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        std::fs::create_dir(tmp.path().join(".git"))?;
+        let skill_dir = tmp.path().join(".opencode").join("skills").join(skill_name);
+        std::fs::create_dir_all(&skill_dir)?;
+        let content =
+            format!("---\nname: {skill_name}\ndescription: test skill\n---\n{skill_body}");
+        std::fs::write(skill_dir.join("SKILL.md"), content)?;
+        Ok(tmp)
+    }
+
+    /// Run `process` with a slash-skill input and return the stored user
+    /// message text. Uses an unqualified model to get a quick error after
+    /// persistence.
+    async fn run_and_get_user_message(
+        project_dir: &std::path::Path,
+        user_input: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let store = SessionStore::open_in_memory()?;
+        let session = Session::new("proj-1".to_owned(), project_dir.display().to_string());
+        store.create_session(&session)?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let options = ProcessOptions {
+            session_id: session.id.clone(),
+            user_message: user_input.to_owned(),
+            model: Some("bad-format".to_owned()),
+            agent: "default".to_owned(),
+        };
+
+        process(&store, options, tx).await?;
+
+        // Drain events to prevent channel saturation.
+        while rx.try_recv().is_ok() {}
+
+        let messages = store.list_messages(&session.id)?;
+        let user_msg = messages
+            .iter()
+            .find(|m| matches!(m.role, crate::session::message::MessageRole::User))
+            .ok_or("no user message found")?;
+
+        if let crate::session::message::Part::Text(t) = &user_msg.parts[0] {
+            Ok(t.text.clone())
+        } else {
+            Err("expected text part".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn process_expands_slash_skill_before_persistence()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = create_skill_project("greet", "You are a helpful assistant.")?;
+
+        let text = run_and_get_user_message(tmp.path(), "/greet").await?;
+        assert_eq!(text, "You are a helpful assistant.");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_appends_trailing_args_to_expanded_skill()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = create_skill_project("greet", "You are a helpful assistant.")?;
+
+        let text = run_and_get_user_message(tmp.path(), "/greet focus on Rust").await?;
+        assert_eq!(text, "You are a helpful assistant.\n\nfocus on Rust");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_leaves_unknown_slash_unchanged() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = create_skill_project("greet", "body")?;
+
+        let text = run_and_get_user_message(tmp.path(), "/unknown-skill").await?;
+        assert_eq!(text, "/unknown-skill");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_leaves_plain_text_unchanged() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = create_skill_project("greet", "body")?;
+
+        let text = run_and_get_user_message(tmp.path(), "hello world").await?;
+        assert_eq!(text, "hello world");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_does_not_expand_slash_not_at_start() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let tmp = create_skill_project("greet", "expanded body")?;
+
+        let text = run_and_get_user_message(tmp.path(), "use /greet").await?;
+        assert_eq!(text, "use /greet");
+        Ok(())
     }
 }

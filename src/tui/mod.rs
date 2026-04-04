@@ -14,7 +14,8 @@ use ratatui::{
     prelude::{StatefulWidget, Widget},
 };
 use widgets::{
-    chat::ChatWidget, input::InputWidget, model_picker::ModelPicker, statusbar::StatusBar,
+    chat::ChatWidget, input::InputWidget, model_picker::ModelPicker,
+    slash_completion::SlashCompletion, statusbar::StatusBar,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +67,7 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
     // Merge config model with CLI override: CLI wins when both are present.
     let effective_model = initial_model.or(config.model);
     let mut app = App::with_models(choices, effective_model);
+    app.skills = crate::skill::discover(ctx.project_root());
 
     // Unbounded channel for events coming from background processor tasks.
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<events::AppEvent>();
@@ -104,6 +106,13 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
             }
         }
 
+        // Pre-compute before the closure: calling &self methods on `app` inside a closure
+        // that also mutably captures fields of `app` triggers E0502.
+        let slash_filtered: Vec<crate::skill::SkillInfo> = if app.slash_open {
+            app.slash_filtered_skills().into_iter().cloned().collect()
+        } else {
+            vec![]
+        };
         let styles = &app.styles;
         terminal.draw(|frame| {
             let area = frame.area();
@@ -137,6 +146,15 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                     styles,
                     models: &app.models,
                     highlight: app.picker_highlight,
+                }
+                .render(area, frame.buffer_mut());
+            }
+            if app.slash_open {
+                let refs: Vec<&crate::skill::SkillInfo> = slash_filtered.iter().collect();
+                SlashCompletion {
+                    styles,
+                    skills: &refs,
+                    highlight: app.slash_highlight,
                 }
                 .render(area, frame.buffer_mut());
             }

@@ -1,4 +1,5 @@
 use crate::provider::models_dev::ModelChoice;
+use crate::skill::SkillInfo;
 use crate::tui::{
     styles::Styles,
     widgets::{
@@ -26,6 +27,12 @@ pub struct App {
     pub picker_open: bool,
     /// Index into `models` that is currently highlighted in the picker.
     pub picker_highlight: usize,
+    /// Discovered skills for the current project (loaded once at startup).
+    pub skills: Vec<SkillInfo>,
+    /// Whether the slash-completion popup is currently visible.
+    pub slash_open: bool,
+    /// Index into the filtered skill list that is highlighted.
+    pub slash_highlight: usize,
 }
 
 impl Default for App {
@@ -47,6 +54,9 @@ impl App {
             pending_submit: None,
             picker_open: false,
             picker_highlight: 0,
+            skills: vec![],
+            slash_open: false,
+            slash_highlight: 0,
         }
     }
 
@@ -127,11 +137,20 @@ impl App {
     /// - **Up / k**   - move highlight up (wraps)
     /// - **Down / j** - move highlight down (wraps)
     ///
-    /// When the picker is closed:
+    /// When the slash-completion popup is open:
+    /// - **Esc**      - close popup
+    /// - **Enter / Tab** - apply highlighted skill
+    /// - **Up / k**   - move highlight up (wraps)
+    /// - **Down / j** - move highlight down (wraps)
+    /// - **Backspace** - delete char (close if input becomes empty)
+    /// - **Whitespace** - insert and close
+    /// - **Char(c)**  - insert and keep open if still a slash-token
+    ///
+    /// When neither popup is open:
     /// - **Ctrl+T**   - open model picker
     /// - **Enter**    - submit current input
     /// - **Backspace** - delete last char
-    /// - **Char(c)**  - insert character
+    /// - **Char(c)**  - insert character (`/` at start opens slash completion)
     /// - **`PageUp` / `PageDown`** - scroll chat
     pub fn handle_key(&mut self, key: KeyEvent) {
         if (key.code, key.modifiers) == (KeyCode::Char('c'), KeyModifiers::CONTROL) {
@@ -152,17 +171,102 @@ impl App {
             }
             return;
         }
+        if (key.code, key.modifiers) == (KeyCode::Char('t'), KeyModifiers::CONTROL) {
+            self.slash_open = false;
+            self.open_model_picker();
+            return;
+        }
+        if self.slash_open {
+            self.handle_slash_key(key);
+            return;
+        }
         match (key.code, key.modifiers) {
-            (KeyCode::Char('t'), KeyModifiers::CONTROL) => self.open_model_picker(),
             (KeyCode::Enter, KeyModifiers::NONE) if self.input.focused => self.submit_message(),
             (KeyCode::Backspace, KeyModifiers::NONE) => self.input.delete_char(),
             (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.input.insert_char(c);
+                if c == '/' && self.input.text == "/" && !self.skills.is_empty() {
+                    self.slash_open = true;
+                    self.slash_highlight = 0;
+                }
             }
             (KeyCode::PageUp, KeyModifiers::NONE) => self.chat.scroll_up(),
             (KeyCode::PageDown, KeyModifiers::NONE) => self.chat.scroll_down(),
             _ => {}
         }
+    }
+
+    /// Handle a key event while the slash-completion popup is open.
+    fn handle_slash_key(&mut self, key: KeyEvent) {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, KeyModifiers::NONE) => {
+                self.slash_open = false;
+            }
+            (KeyCode::Enter | KeyCode::Tab, KeyModifiers::NONE) => {
+                self.apply_slash_selection();
+            }
+            (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+                self.move_slash_up();
+            }
+            (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+                self.move_slash_down();
+            }
+            (KeyCode::Backspace, KeyModifiers::NONE) => {
+                self.input.delete_char();
+                if self.input.text.is_empty() {
+                    self.slash_open = false;
+                }
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.input.insert_char(c);
+                if c.is_whitespace() {
+                    self.slash_open = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Move the slash-completion highlight one row up, wrapping.
+    fn move_slash_up(&mut self) {
+        let len = self.slash_filtered_skills().len();
+        if len > 0 {
+            self.slash_highlight = (self.slash_highlight + len - 1) % len;
+        }
+    }
+
+    /// Move the slash-completion highlight one row down, wrapping.
+    fn move_slash_down(&mut self) {
+        let len = self.slash_filtered_skills().len();
+        if len > 0 {
+            self.slash_highlight = (self.slash_highlight + 1) % len;
+        }
+    }
+
+    /// Apply the currently highlighted slash-completion skill.
+    fn apply_slash_selection(&mut self) {
+        let filtered = self.slash_filtered_skills();
+        let idx = self.slash_highlight.min(filtered.len().saturating_sub(1));
+        if let Some(skill) = filtered.get(idx) {
+            self.input.text = format!("/{} ", skill.name);
+            self.input.cursor = self.input.text.len();
+        }
+        self.slash_open = false;
+    }
+
+    /// Return skills matching the current slash-filter prefix (case-insensitive).
+    #[must_use]
+    pub(super) fn slash_filtered_skills(&self) -> Vec<&SkillInfo> {
+        let filter = self
+            .input
+            .text
+            .strip_prefix('/')
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        self.skills
+            .iter()
+            .filter(|s| s.name.to_ascii_lowercase().starts_with(&filter))
+            .collect()
     }
 
     fn submit_message(&mut self) {
@@ -655,5 +759,344 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         // Then: input is still unfocused throughout
         assert!(!app.input.focused);
+    }
+
+    // ================================================================
+    // Slash completion -- helpers
+    // ================================================================
+
+    fn make_skill(name: &str, description: &str) -> SkillInfo {
+        SkillInfo {
+            name: name.to_string(),
+            description: description.to_string(),
+            content: format!("{name} content"),
+            location: std::path::PathBuf::from(format!("/fake/{name}/SKILL.md")),
+        }
+    }
+
+    fn app_with_skills() -> App {
+        let mut app = App::new();
+        app.skills = vec![
+            make_skill("commit", "Create a git commit"),
+            make_skill("review", "Review code changes"),
+            make_skill("refactor", "Refactor code"),
+        ];
+        app
+    }
+
+    // ================================================================
+    // Slash completion -- default state
+    // ================================================================
+
+    #[test]
+    fn test_new_app_slash_is_closed_by_default() {
+        let app = App::new();
+        assert!(!app.slash_open);
+    }
+
+    #[test]
+    fn test_new_app_slash_highlight_is_zero_by_default() {
+        let app = App::new();
+        assert_eq!(app.slash_highlight, 0);
+    }
+
+    #[test]
+    fn test_new_app_has_empty_skills() {
+        let app = App::new();
+        assert!(app.skills.is_empty());
+    }
+
+    // ================================================================
+    // Slash completion -- opening with `/` at start of input
+    // ================================================================
+
+    #[test]
+    fn test_slash_at_start_opens_completion_when_skills_exist() {
+        // Given: app with skills loaded, empty input
+        let mut app = app_with_skills();
+        assert!(app.input.text.is_empty());
+        // When: `/` is typed
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // Then: slash completion popup opens
+        assert!(app.slash_open);
+        assert_eq!(app.input.text, "/");
+    }
+
+    #[test]
+    fn test_slash_does_not_open_when_no_skills() {
+        // Given: app with no skills
+        let mut app = App::new();
+        assert!(app.skills.is_empty());
+        // When: `/` is typed
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // Then: slash completion does NOT open (just inserts `/`)
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/");
+    }
+
+    #[test]
+    fn test_slash_does_not_open_when_input_not_empty() {
+        // Given: app with skills and some existing text
+        let mut app = app_with_skills();
+        app.input.insert_char('h');
+        // When: `/` is typed
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // Then: slash completion does NOT open (slash not at start)
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "h/");
+    }
+
+    // ================================================================
+    // Slash completion -- filtering while typing
+    // ================================================================
+
+    #[test]
+    fn test_typing_after_slash_filters_candidates() {
+        // Given: slash completion is open with 3 skills
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: typing "re" (matches "review" and "refactor")
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+        // Then: popup stays open, text is "/re"
+        assert!(app.slash_open);
+        assert_eq!(app.input.text, "/re");
+    }
+
+    #[test]
+    fn test_typing_narrows_to_single_match() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // When: typing "com" (matches only "commit")
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        // Then: popup stays open
+        assert!(app.slash_open);
+        assert_eq!(app.input.text, "/com");
+    }
+
+    // ================================================================
+    // Slash completion -- closing with Esc
+    // ================================================================
+
+    #[test]
+    fn test_esc_closes_slash_completion() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: Esc is pressed
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        // Then: popup closes, text stays as "/"
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/");
+    }
+
+    // ================================================================
+    // Slash completion -- closing with whitespace
+    // ================================================================
+
+    #[test]
+    fn test_space_closes_slash_completion() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: space is typed
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        // Then: popup closes, space is inserted
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/ ");
+    }
+
+    // ================================================================
+    // Slash completion -- applying with Enter
+    // ================================================================
+
+    #[test]
+    fn test_enter_applies_selected_skill() {
+        // Given: slash completion is open, highlight on first skill ("commit")
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // When: Enter is pressed
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // Then: input text becomes "/commit ", popup closes
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/commit ");
+    }
+
+    #[test]
+    fn test_enter_does_not_submit_message_when_slash_open() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // When: Enter is pressed
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // Then: no message submitted (input was just a slash prefix)
+        assert!(app.pending_submit.is_none());
+    }
+
+    #[test]
+    fn test_enter_applies_navigated_skill() {
+        // Given: slash completion open, navigate down to "review"
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        // When: Enter applies selection
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // Then: input text becomes "/review "
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/review ");
+    }
+
+    // ================================================================
+    // Slash completion -- applying with Tab
+    // ================================================================
+
+    #[test]
+    fn test_tab_applies_selected_skill() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // When: Tab is pressed
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        // Then: input text becomes "/commit ", popup closes
+        assert!(!app.slash_open);
+        assert_eq!(app.input.text, "/commit ");
+    }
+
+    // ================================================================
+    // Slash completion -- navigation
+    // ================================================================
+
+    #[test]
+    fn test_down_moves_slash_highlight() {
+        // Given: slash completion open at index 0
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(app.slash_highlight, 0);
+        // When: Down pressed
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        // Then: highlight moves to index 1
+        assert_eq!(app.slash_highlight, 1);
+    }
+
+    #[test]
+    fn test_up_moves_slash_highlight() {
+        // Given: slash completion open, navigate to index 1
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.slash_highlight, 1);
+        // When: Up pressed
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        // Then: highlight moves back to 0
+        assert_eq!(app.slash_highlight, 0);
+    }
+
+    #[test]
+    fn test_j_k_navigate_slash_completion() {
+        // Given: slash completion open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        // When: j pressed (vim-style down)
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        // Then: highlight at 1
+        assert_eq!(app.slash_highlight, 1);
+        // When: k pressed (vim-style up)
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        // Then: highlight back to 0
+        assert_eq!(app.slash_highlight, 0);
+    }
+
+    #[test]
+    fn test_slash_completion_wraps_from_last_to_first() {
+        // Given: 3 skills, navigate to last item
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.slash_highlight, 2);
+        // When: Down pressed past last
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        // Then: wraps to first
+        assert_eq!(app.slash_highlight, 0);
+    }
+
+    #[test]
+    fn test_slash_completion_wraps_from_first_to_last() {
+        // Given: slash completion at first item
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(app.slash_highlight, 0);
+        // When: Up pressed before first
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        // Then: wraps to last (index 2)
+        assert_eq!(app.slash_highlight, 2);
+    }
+
+    // ================================================================
+    // Slash completion -- mutual exclusion with model picker
+    // ================================================================
+
+    #[test]
+    fn test_opening_picker_closes_slash_completion() {
+        // Given: slash completion is open
+        let mut app = App::with_models(two_models(), None);
+        app.skills = app_with_skills().skills;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: Ctrl+T opens model picker
+        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+        // Then: picker is open, slash completion is closed
+        assert!(app.picker_open);
+        assert!(!app.slash_open);
+    }
+
+    #[test]
+    fn test_ctrl_c_quit_still_works_with_slash_open() {
+        // Given: slash completion is open
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: Ctrl+C pressed
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        // Then: quit flag set (regardless of popup state)
+        assert!(app.should_quit);
+    }
+
+    // ================================================================
+    // Slash completion -- backspace behavior
+    // ================================================================
+
+    #[test]
+    fn test_backspace_on_slash_only_closes_popup() {
+        // Given: slash completion open with just "/"
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: Backspace removes the "/"
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        // Then: popup closes, input is empty
+        assert!(!app.slash_open);
+        assert!(app.input.text.is_empty());
+    }
+
+    #[test]
+    fn test_backspace_on_partial_filter_keeps_popup_open() {
+        // Given: slash completion open with "/co"
+        let mut app = app_with_skills();
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+        assert!(app.slash_open);
+        // When: Backspace removes "o"
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        // Then: popup stays open, text is "/c"
+        assert!(app.slash_open);
+        assert_eq!(app.input.text, "/c");
     }
 }

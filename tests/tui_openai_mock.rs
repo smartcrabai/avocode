@@ -26,6 +26,7 @@ use common::pty::TuiDriver;
 /// Typing a message and pressing Enter in the TUI should produce a rendered
 /// assistant reply containing `Echo: hello` in the chat widget.
 #[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
 async fn tui_send_message_displays_echo_response() {
     // Given: a running mock container
     let mock = OpenAiMock::start().await;
@@ -87,6 +88,7 @@ async fn tui_send_message_displays_echo_response() {
 /// It does **not** add non-openai providers to avoid changing the default
 /// model ordering for other tests.
 #[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
 async fn tui_model_picker_switches_model_and_message_succeeds() {
     // Given: a running mock container
     let mock = OpenAiMock::start().await;
