@@ -17,6 +17,15 @@ pub struct ErrorBody {
     message: String,
 }
 
+impl From<crate::session::SessionError> for ServerError {
+    fn from(err: crate::session::SessionError) -> Self {
+        match err {
+            crate::session::SessionError::NotFound(id) => ServerError::NotFound(id),
+            other => ServerError::Internal(other.to_string()),
+        }
+    }
+}
+
 impl axum::response::IntoResponse for ServerError {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;

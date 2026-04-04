@@ -19,6 +19,11 @@ pub fn create_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        // Global / health
+        .route("/global/health", get(routes::global::get_health))
+        // App-level
+        .route("/app/agents", get(routes::app::list_agents))
+        // Session lifecycle
         .route(
             "/session",
             get(routes::session::list_sessions).post(routes::session::create_session),
@@ -29,6 +34,16 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/session/{id}", get(routes::session::get_session))
         .route("/session/{id}/message", post(routes::session::send_message))
+        // Session messages
+        .route(
+            "/session/{id}/messages",
+            get(routes::session::list_messages),
+        )
+        .route(
+            "/session/{id}/message/{message_id}",
+            get(routes::session::get_message),
+        )
+        // Provider / config / events / permissions
         .route("/provider", get(routes::provider::list_providers))
         .route("/provider/{id}/model", get(routes::provider::list_models))
         .route("/config", get(routes::config::get_config))

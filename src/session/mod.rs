@@ -3,6 +3,7 @@ pub mod message;
 pub mod model_parser;
 pub mod processor;
 pub mod schema;
+pub mod service;
 pub mod store;
 
 pub use message::{Message, MessageRole, Part};
