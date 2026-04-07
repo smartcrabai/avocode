@@ -1,4 +1,4 @@
-use crate::skill::SkillInfo;
+use crate::tui::app::SlashEntry;
 use crate::tui::styles::Styles;
 use ratatui::{
     buffer::Buffer,
@@ -8,23 +8,23 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Widget},
 };
 
-/// Stateless popup renderer for slash-skill completion.
+/// Stateless popup renderer for slash-command completion.
 ///
-/// Accepts pre-filtered skills from `App::slash_filtered_skills`.
+/// Accepts pre-filtered entries from `App::slash_filtered_entries`.
 /// All state lives in `App`.
 pub struct SlashCompletion<'a> {
     pub styles: &'a Styles,
-    pub skills: &'a [&'a SkillInfo],
+    pub entries: &'a [SlashEntry],
     pub highlight: usize,
 }
 
 impl Widget for SlashCompletion<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if self.skills.is_empty() {
+        if self.entries.is_empty() {
             return;
         }
 
-        let height = (u16::try_from(self.skills.len())
+        let height = (u16::try_from(self.entries.len())
             .unwrap_or(u16::MAX)
             .saturating_add(2))
         .min(area.height / 2)
@@ -43,33 +43,32 @@ impl Widget for SlashCompletion<'_> {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Skills (Enter/Tab apply | Esc close) ")
+            .title(" Commands (Enter/Tab apply | Esc close) ")
             .border_style(Style::default().fg(self.styles.accent));
 
         let items: Vec<ListItem> = self
-            .skills
+            .entries
             .iter()
-            .copied()
             .enumerate()
-            .map(|(i, s)| {
+            .map(|(i, e)| {
                 if i == self.highlight {
                     ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!("> /{}", s.name),
+                            format!("> /{}", e.name),
                             Style::default()
                                 .fg(self.styles.accent)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(
-                            format!(" - {}", s.description),
+                            format!(" - {}", e.description),
                             Style::default().fg(self.styles.muted),
                         ),
                     ]))
                 } else {
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!("  /{}", s.name), Style::default()),
+                        Span::styled(format!("  /{}", e.name), Style::default()),
                         Span::styled(
-                            format!(" - {}", s.description),
+                            format!(" - {}", e.description),
                             Style::default().fg(self.styles.muted),
                         ),
                     ]))

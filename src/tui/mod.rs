@@ -54,7 +54,7 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
     );
     let choices = crate::provider::models_dev::to_model_choices(&providers);
 
-    let session = crate::session::Session::new(
+    let mut session = crate::session::Session::new(
         ctx.project_id().to_string(),
         ctx.project_root().display().to_string(),
     );
@@ -76,12 +76,16 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
         // Process all pending app events before drawing the next frame.
         while let Ok(ev) = event_rx.try_recv() {
             match ev {
-                events::AppEvent::StreamChunk { text } => {
-                    let buf = app.chat.streaming.get_or_insert_with(String::new);
-                    buf.push_str(&text);
+                events::AppEvent::StreamChunk { session_id, text } => {
+                    if session_id == session.id {
+                        let buf = app.chat.streaming.get_or_insert_with(String::new);
+                        buf.push_str(&text);
+                    }
                 }
-                events::AppEvent::StreamDone => {
-                    if let Some(text) = app.chat.streaming.take() {
+                events::AppEvent::StreamDone { session_id } => {
+                    if session_id == session.id
+                        && let Some(text) = app.chat.streaming.take()
+                    {
                         app.chat.push(widgets::chat::ChatMessage {
                             role: widgets::chat::MessageRole::Assistant,
                             content: text,
@@ -108,11 +112,12 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
 
         // Pre-compute before the closure: calling &self methods on `app` inside a closure
         // that also mutably captures fields of `app` triggers E0502.
-        let slash_filtered: Vec<crate::skill::SkillInfo> = if app.slash_open {
-            app.slash_filtered_skills().into_iter().cloned().collect()
-        } else {
-            vec![]
-        };
+        let slash_filtered: Vec<app::SlashEntry> =
+            if matches!(app.active_popup, Some(app::PopupKind::SlashCompletion)) {
+                app.slash_filtered_entries()
+            } else {
+                vec![]
+            };
         let styles = &app.styles;
         terminal.draw(|frame| {
             let area = frame.area();
@@ -129,7 +134,7 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
 
             ChatWidget { styles }.render(chunks[0], frame.buffer_mut(), &mut app.chat);
             InputWidget { styles }.render(chunks[1], frame.buffer_mut(), &mut app.input);
-            let keys_hint = if app.picker_open {
+            let keys_hint = if matches!(app.active_popup, Some(app::PopupKind::ModelPicker)) {
                 "up/down/jk move  Enter apply  Esc close"
             } else {
                 "^T models  ^C quit"
@@ -141,7 +146,7 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                 keys_hint,
             }
             .render(chunks[2], frame.buffer_mut());
-            if app.picker_open {
+            if matches!(app.active_popup, Some(app::PopupKind::ModelPicker)) {
                 ModelPicker {
                     styles,
                     models: &app.models,
@@ -149,11 +154,10 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                 }
                 .render(area, frame.buffer_mut());
             }
-            if app.slash_open {
-                let refs: Vec<&crate::skill::SkillInfo> = slash_filtered.iter().collect();
+            if matches!(app.active_popup, Some(app::PopupKind::SlashCompletion)) {
                 SlashCompletion {
                     styles,
-                    skills: &refs,
+                    entries: &slash_filtered,
                     highlight: app.slash_highlight,
                 }
                 .render(area, frame.buffer_mut());
@@ -176,7 +180,7 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
             tokio::spawn(async move {
                 let (proc_tx, mut proc_rx) = tokio::sync::mpsc::channel(64);
                 let options = crate::session::processor::ProcessOptions {
-                    session_id,
+                    session_id: session_id.clone(),
                     user_message: user_text,
                     model,
                     agent: "default".to_owned(),
@@ -193,11 +197,16 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                     match ev {
                         crate::session::processor::ProcessEvent::PartUpdated { part, .. } => {
                             if let crate::session::Part::Text(t) = part {
-                                let _ = tx.send(events::AppEvent::StreamChunk { text: t.text });
+                                let _ = tx.send(events::AppEvent::StreamChunk {
+                                    session_id: session_id.clone(),
+                                    text: t.text,
+                                });
                             }
                         }
                         crate::session::processor::ProcessEvent::Done => {
-                            let _ = tx.send(events::AppEvent::StreamDone);
+                            let _ = tx.send(events::AppEvent::StreamDone {
+                                session_id: session_id.clone(),
+                            });
                             return;
                         }
                         crate::session::processor::ProcessEvent::Error(e) => {
@@ -214,6 +223,17 @@ pub async fn run(initial_model: Option<String>) -> Result<()> {
                 };
                 let _ = tx.send(events::AppEvent::Error(error_msg));
             });
+        }
+
+        if app.take_pending_reset() {
+            store.archive_session(&session.id)?;
+            let new_session = crate::session::Session::new(
+                ctx.project_id().to_string(),
+                ctx.project_root().display().to_string(),
+            );
+            store.create_session(&new_session)?;
+            session = new_session;
+            app.reset_ui();
         }
 
         if app.should_quit {
