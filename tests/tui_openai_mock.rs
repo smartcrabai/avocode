@@ -167,6 +167,142 @@ async fn tui_model_picker_switches_model_and_message_succeeds() {
 }
 
 // ---------------------------------------------------------------------------
+// Built-in slash commands -- /model opens model picker
+// ---------------------------------------------------------------------------
+
+/// Typing `/model` and pressing Enter in the TUI should open the model-picker
+/// popup (same as `Ctrl+T`) without submitting a message to the processor.
+///
+/// This test verifies the entire slash-command dispatch path end-to-end:
+/// input → builtin detection → picker open → status bar hint change.
+#[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
+async fn tui_slash_model_command_opens_model_picker() {
+    // Given: a running mock container and an environment with two models
+    let mock = OpenAiMock::start().await;
+    let env = TestEnv::new();
+    env.write_two_openai_models_cache();
+    env.write_openai_config(&mock.base_url);
+
+    let env_overrides = env.env_overrides();
+    let project_path = env.project_path().to_owned();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut driver = TuiDriver::spawn(&env_overrides, &project_path);
+
+        // Then: wait for the TUI initial frame
+        let ready = driver.wait_for(|screen| screen.contains("INSERT"), Duration::from_secs(15));
+        assert!(ready, "TUI did not render initial frame within 15 seconds");
+
+        // When: type "/model" and press Enter
+        driver.send_input("/model");
+        driver.send_input("\r");
+
+        // Then: the model picker popup opens.
+        // The picker shows both models; we wait for "gpt-3.5-turbo" (second model)
+        // to appear, which proves the picker is open (not just the status bar).
+        let picker_open = driver.wait_for(
+            |screen| screen.contains("gpt-3.5-turbo"),
+            Duration::from_secs(5),
+        );
+
+        driver.send_ctrl_c();
+
+        assert!(
+            picker_open,
+            "expected model picker to open after '/model' + Enter\nscreen:\n{}",
+            driver.screen_contents()
+        );
+    })
+    .await;
+
+    result.expect("tui_slash_model_command_opens_model_picker task panicked");
+}
+
+// ---------------------------------------------------------------------------
+// Built-in slash commands -- /new clears transcript and starts fresh session
+// ---------------------------------------------------------------------------
+
+/// Typing `/new` (or `/clear`) after a conversation should clear the on-screen
+/// transcript and allow a subsequent message to succeed in a new session.
+///
+/// Verification steps:
+///  1. Send "hello" → assert echo reply appears.
+///  2. Type `/new` + Enter → assert previous transcript is gone.
+///  3. Send "world" → assert echo reply appears in the new session.
+#[tokio::test]
+#[ignore = "requires Docker and openai-mokku-go image"]
+async fn tui_slash_new_command_clears_transcript_and_allows_new_message() {
+    // Given: a running mock container
+    let mock = OpenAiMock::start().await;
+    let env = TestEnv::new();
+    env.write_models_cache();
+    env.write_openai_config(&mock.base_url);
+
+    let env_overrides = env.env_overrides();
+    let project_path = env.project_path().to_owned();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut driver = TuiDriver::spawn(&env_overrides, &project_path);
+
+        // Then: wait for initial frame
+        let ready = driver.wait_for(|screen| screen.contains("INSERT"), Duration::from_secs(15));
+        assert!(ready, "TUI did not render initial frame within 15 seconds");
+
+        // When: send first message
+        driver.send_input("hello");
+        driver.send_input("\r");
+
+        // Then: echo reply appears
+        let first_reply = driver.wait_for(
+            |screen| screen.contains("Echo: hello"),
+            Duration::from_secs(30),
+        );
+        assert!(
+            first_reply,
+            "expected 'Echo: hello' before /new\nscreen:\n{}",
+            driver.screen_contents()
+        );
+
+        // When: type "/new" and press Enter to reset the session
+        driver.send_input("/new");
+        driver.send_input("\r");
+
+        // Then: the previous transcript is gone from the screen
+        let transcript_cleared = driver.wait_for(
+            |screen| !screen.contains("Echo: hello"),
+            Duration::from_secs(5),
+        );
+        assert!(
+            transcript_cleared,
+            "expected transcript to be cleared after /new\nscreen:\n{}",
+            driver.screen_contents()
+        );
+
+        // When: send a new message in the fresh session
+        driver.send_input("world");
+        driver.send_input("\r");
+
+        // Then: echo reply for the new message appears
+        let second_reply = driver.wait_for(
+            |screen| screen.contains("Echo: world"),
+            Duration::from_secs(30),
+        );
+
+        driver.send_ctrl_c();
+
+        assert!(
+            second_reply,
+            "expected 'Echo: world' in new session after /new\nscreen:\n{}",
+            driver.screen_contents()
+        );
+    })
+    .await;
+
+    result.expect("tui_slash_new_command_clears_transcript task panicked");
+}
+
+// ---------------------------------------------------------------------------
 // Model picker pre-seeding
 // ---------------------------------------------------------------------------
 
